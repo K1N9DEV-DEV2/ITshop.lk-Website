@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/products/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>ITSHOP.LK - Processors</title>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">
+            <a href="../index.html"><img src="/assets/shoplogo.png" alt="Logo"></a>
+        </div>
+        
+        <div class="nav-links" id="navLinks">
+            <a href="../index.html">Home</a>
+            <a href="#">Store</a>
+            <a href="#">Pre Owned</a>
+            <a href="#">Contact Us</a>
+        </div>
+        
+        <div class="right-elements">
+            <!--<a href="#"><i class="fa-solid fa-magnifying-glass"></i></a>-->
+            <!--<a href="#"><i class="fa-solid fa-cart-shopping"></i></a>-->
+            <div class="cart-icon" onclick="toggleCart()">Cart<div class="cart-count">0</div>
+            <div class="hamburger" id="hamburger">☰</div>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <h1 class="page-title">PROCESSORS</h1>
+        
+        <!--<div class="store-location-section">
+            <button class="store-location-btn">
+                Store Location <i class="fas fa-chevron-down"></i>
+            </button>
+        </div>-->
+        
+        <div class="content-container">
+            <!-- Filters Sidebar -->
+            <div class="filters">
+                <div class="filter-section">
+                    <div class="filter-title">PRICE</div>
+                    <div class="price-range">
+                        <input type="range" class="price-slider" min="0" max="150000" value="150000">
+                        <div class="price-values">
+                            <span>0</span>
+                            <span>150000</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="filter-section">
+                    <div class="filter-title">AVAILABILITY</div>
+                    <ul class="filter-options">
+                        <li class="filter-option">
+                            <input type="checkbox" id="in-stock" value="in-stock" class="brand-filter">
+                            <label for="in-stock">IN STOCK</label>
+                        </li>
+                        <li class="filter-option">
+                            <input type="checkbox" id="pre-order" value="pre-order" class="brand-filter">
+                            <label for="pre-order">PRE ORDER</label>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="filter-section">
+                    <div class="filter-title">BRAND</div>
+                    <ul class="filter-options">
+                        <li class="filter-option">
+                            <input type="checkbox" id="amd" value="amd" class="brand-filter">
+                            <label for="amd">AMD</label>
+                        </li>
+                        <li class="filter-option">
+                            <input type="checkbox" id="intel" value="intel" class="brand-filter">
+                            <label for="intel">INTEL</label>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="filter-section">
+                    <div class="filter-title expandable">
+                        GENERATION
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <ul class="filter-options">
+                        <li class="filter-option">
+                            <input type="checkbox" id="6th-gen" value="6th-gen" class="brand-filter">
+                            <label for="6th-gen">6TH GEN</label>
+                        </li>
+                        <li class="filter-option">
+                            <input type="checkbox" id="10th-gen" value="10th-gen" class="brand-filter">
+                            <label for="10th-gen">10TH GEN</label>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="filter-section">
+                    <div class="filter-title expandable">
+                        CORES
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <ul class="filter-options">
+                        <li class="filter-option">
+                            <input type="checkbox" id="2-cores" value="2-cores" class="brand-filter">
+                            <label for="2-cores">2 CORES</label>
+                        </li>
+                        <li class="filter-option">
+                            <input type="checkbox" id="4-cores" value="4-cores" class="brand-filter">
+                            <label for="4-cores">4 CORES</label>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="filter-section">
+                    <div class="filter-title expandable">
+                        THREADS
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <ul class="filter-options">
+                        <li class="filter-option">
+                            <input type="checkbox" id="2-threads" value="2-threads" class="brand-filter">
+                            <label for="2-threads">2 THREADS</label>
+                        </li>
+                        <li class="filter-option">
+                            <input type="checkbox" id="4-threads" value="4-threads" class="brand-filter">
+                            <label for="4-threads">4 THREADS</label>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Products Grid -->
+            <div class="products-grid">
+                <!-- Product 1 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/assets/lap.png" alt="AMD RYZEN 5 5500">
+                    </div>
+                    <h3 class="product-title">AMD RYZEN 5 5500 Processor (6 Core/12 Threads)</h3>
+                    <div class="product-price">Rs. 31,000.00</div>
+                    <div class="product-actions">
+                        <!--<button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>-->
+                        <button class="add-to-cart" onclick="addToCart('AMD RYZEN 7 5700X', 55500)"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 2 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="8"
+                data-threads="16"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <!--<span class="sale-badge">Save Rs. 16,000.00</span>-->
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD RYZEN 7 5700X">
+                    </div>
+                    <h3 class="product-title">AMD RYZEN 7 5700X Processor (8 Cores/16 Threads)</h3>
+                    <div class="product-price">Rs. 55,500.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 3 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="8"
+                data-threads="16"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <!--<span class="sale-badge">Save Rs. 16,000.00</span>-->
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD RYZEN 7 5700G">
+                    </div>
+                    <h3 class="product-title">AMD RYZEN 7 5700G (Cores 8 Threads16)</h3>
+                    <div class="product-price">Rs. 54,000.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 4 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD RYZEN 5 5600X">
+                    </div>
+                    <h3 class="product-title">AMD RYZEN™ 5 7600X Processor (Cores 6/Threads 12)</h3>
+                    <div class="product-price">Rs. 69,500.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 5 -->
+                <div class="product-card"
+                data-brand="intel"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="INTEL CORE i5 14400F">
+                    </div>
+                    <h3 class="product-title">INTEL® CORE™ i5 14400F Processor</h3>
+                    <div class="product-price">Rs. 47,500.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 6 -->
+                <div class="product-card"
+                data-brand="intel"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <!--<span class="sale-badge">Save Rs. 16,000.00</span>-->
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="INTEL i5 12400F">
+                    </div>
+                    <h3 class="product-title">INTEL i5 12400F (Cores 6/Total Threads 12)</h3>
+                    <div class="product-price">Rs. 34,500.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 7 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD A6 7480 Radeon">
+                    </div>
+                    <h3 class="product-title">AMD A6 7480 Radeon VEGA R5 Graphics</h3>
+                    <div class="product-price">Rs. 10,000.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 8 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <!--<span class="sale-badge">Save Rs. 16,000.00</span>-->
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD RYZEN 9 5900X">
+                    </div>
+                    <h3 class="product-title">AMD RYZEN 9 5900X Processor (Cores 12/Threads 24)</h3>
+                    <div class="product-price">Rs. 163,000.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 9 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD RYZEN 5 5600G">
+                    </div>
+                    <h3 class="product-title">AMD RYZEN 5 5600G Processor (Core 6/Threads 12)</h3>
+                    <div class="product-price">Rs. 58,000.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 10 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="8"
+                data-threads="16"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD RYZEN 7 7700X">
+                    </div>
+                    <h3 class="product-title">AMD RYZEN 7 7700X (CORE 8 THREADS 16)</h3>
+                    <div class="product-price">Rs. 105,000.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 11 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="AMD Ryzen 5 5600G">
+                    </div>
+                    <h3 class="product-title">AMD Ryzen™ 5 5600G Processor (Cores 6/Threads 12)</h3>
+                    <div class="product-price">Rs. 43,000.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Product 12 -->
+                <div class="product-card"
+                data-brand="amd"
+                data-cores="6"
+                data-threads="12"
+                data-generation="n/a"
+                data-availability="in-stock">
+                    <span class="stock-badge">In Stock</span>
+                    <div class="product-image">
+                        <img src="/api/placeholder/180/150" alt="INTEL CORE i7 14700">
+                    </div>
+                    <h3 class="product-title">INTEL CORE i7 14700 PROCESSOR</h3>
+                    <div class="product-price">Rs. 108,000.00</div>
+                    <div class="product-actions">
+                        <button class="add-to-cart-btn"><i class="fas fa-shopping-cart"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pagination -->
+        <div class="pagination">
+            <a href="#" class="page-link active">1</a>
+            <a href="#" class="page-link">2</a>
+            <a href="#" class="page-link">3</a>
+            <a href="#" class="page-link">4</a>
+            <a href="#" class="page-link">5</a>
+            <a href="#" class="page-link">6</a>
+            <a href="#" class="page-link"><i class="fas fa-chevron-right"></i></a>
+        </div>
+    </div>
+
+    <!--footer-->
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>Company</h3>
+                <ul>
+                    <li><a href="#">About</a></li>
+                    <li><a href="#">Contact</a></li>
+                    <li><a href="#">Team</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Brands</h3>
+                <ul>
+
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Support</h3>
+                <ul>
+                    <li><a href="#">FAQ</a></li>
+                    <li><a href="#">Shipping</a></li>
+                    <li><a href="#">Returns & Refunds</a></li>
+                    <li><a href="#">Where to buy</a></li>
+                    <li><a href="#">PC Services</a></li>
+                    <li><a href="#">Warranty</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Contact</h3>
+                <div class="social-icons">
+                    <a href="#"><i class="fab fa-facebook"></i></a>
+                    <a href="#"><i class="fab fa-instagram"></i></a>
+                    <a href="#"><i class="fab fa-youtube"></i></a>
+                    <a href="#"><i class="fab fa-tiktok"></i></a>
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div class="copyright">
+                © 2024 All rights reserved by <span-c>ITSHOP.LK</span-c>.
+            </div>
+            <div class="legal-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Use</a>
+            </div>
+        </div>
+    </footer>
+
+    <!--script section-->
+
+    <script>
+        // Toggle mobile menu
+        const hamburger = document.getElementById('hamburger');
+        const navLinks = document.getElementById('navLinks');
+        
+        hamburger.addEventListener('click', () => {
+            navLinks.classList.toggle('active');
+        });
+
+        // Close menu when clicking outside
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('.navbar')) {
+                navLinks.classList.remove('active');
+            }
+        });
+    </script>
+
+<script>
+    let slideIndex = 0;
+    let slideInterval;
+    
+    // Show the slides automatically
+    function showSlides() {
+        let i;
+        let slides = document.getElementsByClassName("mySlides");
+        let dots = document.getElementsByClassName("dot");
+        
+        for (i = 0; i < slides.length; i++) {
+            slides[i].style.display = "none";
+        }
+        
+        slideIndex++;
+        
+        if (slideIndex > slides.length) {
+            slideIndex = 1;
+        }
+        
+        for (i = 0; i < dots.length; i++) {
+            dots[i].className = dots[i].className.replace(" active", "");
+        }
+        
+        slides[slideIndex - 1].style.display = "block";
+        dots[slideIndex - 1].className += " active";
+    }
+    
+    // Show a specific slide when clicking on the dots
+    function currentSlide(n) {
+        clearInterval(slideInterval);
+        slideIndex = n - 1;
+        showSlides();
+        startSlideshow();
+    }
+    
+    // Start the slideshow with interval
+    function startSlideshow() {
+        slideInterval = setInterval(showSlides, 4000); // Change image every 4 seconds
+    }
+    
+    // Initialize slideshow
+    window.onload = function() {
+        showSlides();
+        startSlideshow();
+    };
+</script>
+
+<script>
+    // Simple JS to make the page interactive (for demo purposes)
+    document.addEventListener('DOMContentLoaded', function() {
+        // Price slider functionality
+        const priceSlider = document.querySelector('.price-slider');
+        const maxPriceDisplay = document.querySelector('.price-values span:last-child');
+        
+        priceSlider.addEventListener('input', function() {
+            maxPriceDisplay.textContent = this.value;
+        });
+        
+        // Expandable sections functionality
+        const expandableTitles = document.querySelectorAll('.expandable');
+        
+        expandableTitles.forEach(title => {
+            title.addEventListener('click', function() {
+                const options = this.nextElementSibling;
+                const icon = this.querySelector('i');
+                
+                if (options.style.display === 'none' || options.style.display === '') {
+                    options.style.display = 'block';
+                    icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+                } else {
+                    options.style.display = 'none';
+                    icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+                }
+            });
+        });
+        
+        // Add to cart functionality
+        const addToCartButtons = document.querySelectorAll('.add-to-cart-btn');
+        
+        addToCartButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                alert('Product added to cart!');
+            });
+        });
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const filterCheckboxes = document.querySelectorAll('.filter-option input');
+        const products = document.querySelectorAll('.product-card');
+    
+        filterCheckboxes.forEach(cb => {
+            cb.addEventListener('change', applyFilters);
+        });
+    
+        function applyFilters() {
+            const selectedBrands = getCheckedValues('.brand-filter');
+            const selectedCores = getCheckedValues('.core-filter');
+            const selectedThreads = getCheckedValues('.thread-filter');
+            const selectedAvailability = getCheckedValues('.availability-filter');
+    
+            products.forEach(product => {
+                const matchesBrand = selectedBrands.length === 0 || selectedBrands.includes(product.dataset.brand);
+                const matchesCores = selectedCores.length === 0 || selectedCores.includes(product.dataset.cores);
+                const matchesThreads = selectedThreads.length === 0 || selectedThreads.includes(product.dataset.threads);
+                const matchesAvailability = selectedAvailability.length === 0 || selectedAvailability.includes(product.dataset.availability);
+    
+                if (matchesBrand && matchesCores && matchesThreads && matchesAvailability) {
+                    product.style.display = 'block';
+                } else {
+                    product.style.display = 'none';
+                }
+            });
+        }
+    
+        function getCheckedValues(selector) {
+            return Array.from(document.querySelectorAll(selector + ':checked')).map(cb => cb.value.toLowerCase());
+        }
+    });
+</script>
+    
+<script>
+    let cart = [];
+    let cartOpen = false;
+
+    function toggleCart() {
+        const cartMenu = document.querySelector('.cart-menu');
+        const cartOverlay = document.querySelector('.cart-overlay');
+        
+        if (cartOpen) {
+            cartMenu.style.right = '-400px';
+            cartOverlay.style.display = 'none';
+            cartOpen = false;
+        } else {
+            cartMenu.style.right = '0';
+            cartOverlay.style.display = 'block';
+            cartOpen = true;
+        }
+    }
+
+    function addToCart(productName, price) {
+        // Check if product already exists in cart
+        const existingProductIndex = cart.findIndex(item => item.name === productName);
+        
+        if (existingProductIndex !== -1) {
+            // Increase quantity if product already in cart
+            cart[existingProductIndex].quantity += 1;
+        } else {
+            // Add new product to cart
+            cart.push({
+                name: productName,
+                price: price,
+                quantity: 1
+            });
+        }
+        
+        updateCartUI();
+    }
+
+    function removeFromCart(index) {
+        cart.splice(index, 1);
+        updateCartUI();
+    }
+
+    function updateQuantity(index, newQuantity) {
+        if (newQuantity > 0) {
+            cart[index].quantity = newQuantity;
+        } else {
+            removeFromCart(index);
+        }
+        updateCartUI();
+    }
+
+    function updateCartUI() {
+        const cartItemsElement = document.getElementById('cart-items');
+        const emptyCartMessage = document.getElementById('empty-cart-message');
+        const totalAmountElement = document.getElementById('total-amount');
+        const cartCountElement = document.querySelector('.cart-count');
+        
+        // Clear current cart items
+        cartItemsElement.innerHTML = '';
+        
+        // Calculate total
+        let total = 0;
+        let totalItems = 0;
+        
+        // Add each item to the cart UI
+        cart.forEach((item, index) => {
+            const itemTotal = item.price * item.quantity;
+            total += itemTotal;
+            totalItems += item.quantity;
+            
+            const cartItemElement = document.createElement('div');
+            cartItemElement.className = 'cart-item';
+            cartItemElement.innerHTML = `
+                <div class="cart-item-image"></div>
+                <div class="cart-item-details">
+                    <div class="cart-item-title">${item.name}</div>
+                    <div class="cart-item-price">Rs. ${item.price.toLocaleString()}</div>
+                    <div class="cart-item-quantity">
+                        <button class="quantity-btn" onclick="updateQuantity(${index}, ${item.quantity - 1})">-</button>
+                        <input type="number" class="quantity-input" value="${item.quantity}" min="1" onchange="updateQuantity(${index}, parseInt(this.value))">
+                        <button class="quantity-btn" onclick="updateQuantity(${index}, ${item.quantity + 1})">+</button>
+                        <button class="remove-btn" onclick="removeFromCart(${index})">Remove</button>
+                    </div>
+                </div>
+            `;
+            
+            cartItemsElement.appendChild(cartItemElement);
+        });
+        
+        // Update cart count
+        cartCountElement.textContent = totalItems;
+        
+        // Update total amount
+        totalAmountElement.textContent = `Rs. ${total.toLocaleString()}.00`;
+        
+        // Show/hide empty cart message
+        if (cart.length === 0) {
+            emptyCartMessage.style.display = 'block';
+        } else {
+            emptyCartMessage.style.display = 'none';
+        }
+    }
+
+    function checkout() {
+        if (cart.length === 0) {
+            alert('Your cart is empty!');
+            return;
+        }
+        
+        alert('Proceeding to checkout!');
+        // Here you would typically redirect to a checkout page
+    }
+
+    // Initialize cart UI
+    updateCartUI();
+</script>
+
+</body>
+</html>

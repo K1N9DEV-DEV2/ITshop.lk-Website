@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="check-style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Document</title>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">
+            <a href="index.html"><img src="/assets/shoplogo.png" alt="Logo"></a>
+        </div>
+        
+        <div class="nav-links" id="navLinks">
+            <a href="store.html">Store</a>
+            <a href="#">Rapdiventure</a>
+            <a href="#">Contact Us</a>
+            <a href="#">License / Renewal</a>
+        </div>
+        
+        <div class="right-elements">
+            <a href="#"><i class="fa-solid fa-magnifying-glass"></i></a>
+            <a href="#"><i class="fa-solid fa-cart-shopping"></i></a>
+            <div class="hamburger" id="hamburger">☰</div>
+        </div>
+    </nav>
+
+
+    <div class="container">
+        <h1>Checkout</h1>
+
+        <div class="checkout-container">
+            <div class="products-list">
+
+            </div>
+
+            <div class="order-summary">
+                <div class="tabs">
+                    <div class="tab active" data-tab="summary">Order Summary</div>
+                    <div class="tab" data-tab="details">Customer Details</div>
+                </div>
+
+                <div class="tab-content active" id="summary-tab">
+                    <div class="summary-card">
+                        <h3 class="summary-title">Receipt</h3>
+                        <div class="summary-row">
+                            <span>Total Amount</span>
+                            <span>Rs. 000.00</span>
+                        </div>
+                        <div class="summary-row">
+                            <span>Discount Amount</span>
+                            <span>Rs. 00.00</span>
+                        </div>
+                        <div class="summary-row summary-total">
+                            <span>Payable Amount</span>
+                            <span>Rs. 000.00</span>
+                        </div>
+                        <button class="checkout-btn" onclick="showTab('details')">Checkout</button>
+                        <button class="quote-btn" onclick="showModal()">Get Quotation Via Mail</button>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="details-tab">
+                    <div class="form-card">
+                        <div class="form-group">
+                            <input type="text" class="form-control" placeholder="First name">
+                        </div>
+                        <div class="form-group">
+                            <input type="text" class="form-control" placeholder="Last name">
+                        </div>
+                        <div class="form-group">
+                            <input type="email" class="form-control" placeholder="Email">
+                        </div>
+                        <div class="form-group">
+                            <input type="tel" class="form-control" placeholder="Mobile">
+                        </div>
+                        <div class="form-group">
+                            <input type="text" class="form-control" placeholder="Home No, Street">
+                        </div>
+                        <div class="form-group">
+                            <input type="text" class="form-control" placeholder="City">
+                        </div>
+                        <div class="form-group">
+                            <select class="form-select">
+                                <option>Western</option>
+                                <option>Central</option>
+                                <option>Eastern</option>
+                                <option>Northern</option>
+                                <option>Southern</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+                            <button class="checkout-btn" style="width: 48%; background-color: #333;">Back</button>
+                            <button class="checkout-btn" style="width: 48%;">Proceed to Pay</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="quotation-modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal()">&times;</span>
+            <h3 class="modal-title">Send Mail</h3>
+            <div class="form-group">
+                <input type="email" class="form-control" placeholder="Email">
+            </div>
+            <div class="form-group">
+                <input type="tel" class="form-control" placeholder="Phone Number">
+            </div>
+            <div class="form-group">
+                <input type="text" class="form-control" placeholder="Name">
+            </div>
+            <button class="modal-btn">Send Mail</button>
+        </div>
+    </div>
+
+    <!--footer-->
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>Company</h3>
+                <ul>
+                    <li><a href="#">About</a></li>
+                    <li><a href="#">Contact</a></li>
+                    <li><a href="#">Team</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Brands</h3>
+                <ul>
+
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Support</h3>
+                <ul>
+                    <li><a href="#">FAQ</a></li>
+                    <li><a href="#">Shipping</a></li>
+                    <li><a href="#">Returns & Refunds</a></li>
+                    <li><a href="#">Where to buy</a></li>
+                    <li><a href="#">PC Services</a></li>
+                    <li><a href="#">Warranty</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Contact</h3>
+                <div class="social-icons">
+                    <a href="#"><i class="fab fa-facebook"></i></a>
+                    <a href="#"><i class="fab fa-instagram"></i></a>
+                    <a href="#"><i class="fab fa-youtube"></i></a>
+                    <a href="#"><i class="fab fa-tiktok"></i></a>
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div class="copyright">
+                © 2024 All rights reserved by <span-c>ITSHOP.LK</span-c>.
+            </div>
+            <div class="legal-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Use</a>
+            </div>
+        </div>
+    </footer>
+
+    <!--script section-->
+
+    <script>
+        // Toggle mobile menu
+        const hamburger = document.getElementById('hamburger');
+        const navLinks = document.getElementById('navLinks');
+        
+        hamburger.addEventListener('click', () => {
+            navLinks.classList.toggle('active');
+        });
+
+        // Close menu when clicking outside
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('.navbar')) {
+                navLinks.classList.remove('active');
+            }
+        });
+    </script>
+
+<script>
+    function showTab(tabName) {
+        // Hide all tabs
+        const tabs = document.querySelectorAll('.tab');
+        tabs.forEach(tab => tab.classList.remove('active'));
+        
+        // Hide all tab content
+        const tabContents = document.querySelectorAll('.tab-content');
+        tabContents.forEach(content => content.classList.remove('active'));
+        
+        // Show selected tab
+        document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+    }
+    
+    function showModal() {
+        document.getElementById('quotation-modal').style.display = 'flex';
+    }
+    
+    function closeModal() {
+        document.getElementById('quotation-modal').style.display = 'none';
+    }
+    
+    // Add event listeners to tab buttons
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            showTab(tab.getAttribute('data-tab'));
+        });
+    });
+    
+    // Add event listeners to quantity buttons
+    document.querySelectorAll('.quantity-btn').forEach((btn, index) => {
+        btn.addEventListener('click', () => {
+            const inputs = document.querySelectorAll('.quantity-input');
+            const input = inputs[Math.floor(index / 2)];
+            let value = parseInt(input.value);
+            
+            if (index % 2 === 0) { // Decrease button
+                if (value > 1) input.value = value - 1;
+            } else { // Increase button
+                input.value = value + 1;
+            }
+        });
+    });
+</script>
+
+<script>
+   // Get cart items from localStorage
+let cartItems = JSON.parse(localStorage.getItem('cart-items')) || [];
+
+// Calculate cart total
+function calculateTotal() {
+    return cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+}
+
+// Render checkout form
+function renderCheckoutForm() {
+    const container = document.getElementById('checkout-form-container');
+    
+    if (cartItems.length === 0) {
+        container.innerHTML = '<div class="empty-cart-message">Your cart is empty</div>';
+    } else {
+        // In a real app, you would render a form here
+        container.innerHTML = '<div>Checkout form would go here...</div>';
+    }
+}
+</script>
+
+
+</body>
+</html>

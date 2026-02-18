@@ -39,14 +39,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $stmt->close();
         }
     } elseif (isset($_POST['signup'])) {
-        // Signup process - Now handling ALL form fields
+        // Signup process
         $first_name = htmlspecialchars(trim($_POST['first_name']));
         $last_name = htmlspecialchars(trim($_POST['last_name']));
         $phone = htmlspecialchars(trim($_POST['phone']));
         $address = htmlspecialchars(trim($_POST['address']));
         $city = htmlspecialchars(trim($_POST['city']));
-        $state = htmlspecialchars(trim($_POST['state']));
-        $zipcode = htmlspecialchars(trim($_POST['zipcode']));
         $country = htmlspecialchars(trim($_POST['country']));
         $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
         $password = $_POST['password'];
@@ -54,7 +52,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         
         // Validation
         if (empty($first_name) || empty($last_name) || empty($phone) || empty($address) || 
-            empty($city) || empty($state) || empty($zipcode) || empty($country) || 
+            empty($city) || empty($country) || 
             empty($email) || empty($password) || empty($confirm_password)) {
             $error = "Please fill in all fields.";
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -73,10 +71,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             if ($result->num_rows > 0) {
                 $error = "Email already exists. Please use a different email.";
             } else {
-                // Hash password and insert user with ALL fields
+                // Hash password and insert user
                 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-                $stmt = $conn->prepare("INSERT INTO users (first_name, last_name, phone, address, city, state, zipcode, country, email, password, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-                $stmt->bind_param("ssssssssss", $first_name, $last_name, $phone, $address, $city, $state, $zipcode, $country, $email, $hashed_password);
+                $stmt = $conn->prepare("INSERT INTO users (first_name, last_name, phone, address, city, country, email, password, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                $stmt->bind_param("ssssssss", $first_name, $last_name, $phone, $address, $city, $country, $email, $hashed_password);
                 
                 if ($stmt->execute()) {
                     $message = "Account created successfully! Please log in.";
@@ -523,17 +521,6 @@ input[type="tel"]:focus {
                         <div class="form-group">
                             <label for="city">City</label>
                             <input type="text" id="city" name="city" value="<?php echo isset($_POST['city']) ? htmlspecialchars($_POST['city']) : ''; ?>" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="state">State</label>
-                            <input type="text" id="state" name="state" value="<?php echo isset($_POST['state']) ? htmlspecialchars($_POST['state']) : ''; ?>" required>
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="zipcode">Zipcode</label>
-                            <input type="text" id="zipcode" name="zipcode" value="<?php echo isset($_POST['zipcode']) ? htmlspecialchars($_POST['zipcode']) : ''; ?>" required>
                         </div>
                         <div class="form-group">
                             <label for="country">Country</label>

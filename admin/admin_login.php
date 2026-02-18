@@ -1,9 +1,12 @@
 <?php
 // admin_login.php
 session_start();
-include '../db.php'; // Expects $pdo (PDO connection)
 
-// If already logged in, redirect to dashboard
+// --- Simple credentials (change these) ---
+define('ADMIN_USER', 'admin');
+define('ADMIN_PASS', 'admin123');
+// -----------------------------------------
+
 if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
     header('Location: admin_dashbaord.php');
     exit;
@@ -11,30 +14,18 @@ if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true
 
 $error_message = '';
 
-// Handle login form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = trim($_POST['password'] ?? '');
 
     if ($username && $password) {
-        try {
-            $stmt = $pdo->prepare("SELECT * FROM admins WHERE username = ? LIMIT 1");
-            $stmt->execute([$username]);
-            $admin = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($admin && password_verify($password, $admin['password'])) {
-                // Store session variables
-                $_SESSION['admin_logged_in'] = true;
-                $_SESSION['admin_id'] = $admin['id'];
-                $_SESSION['admin_username'] = $admin['username'];
-
-                header('Location: admin_dashboard.php');
-                exit;
-            } else {
-                $error_message = "Invalid username or password.";
-            }
-        } catch (PDOException $e) {
-            $error_message = "Database error: " . htmlspecialchars($e->getMessage());
+        if ($username === ADMIN_USER && $password === ADMIN_PASS) {
+            $_SESSION['admin_logged_in'] = true;
+            $_SESSION['admin_username'] = $username;
+            header('Location: admin_dashboard.php');
+            exit;
+        } else {
+            $error_message = "Invalid username or password.";
         }
     } else {
         $error_message = "Please enter both username and password.";
@@ -57,16 +48,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </style>
 </head>
 <body>
-
 <div class="card login-card">
   <div class="card-body">
     <h3 class="mb-3 text-center">Admin Login</h3>
     <p class="text-muted text-center mb-4">Sign in to manage your store</p>
-
     <?php if ($error_message): ?>
-      <div class="alert alert-danger"><?php echo $error_message; ?></div>
+      <div class="alert alert-danger"><?= htmlspecialchars($error_message) ?></div>
     <?php endif; ?>
-
     <form method="post" action="">
       <div class="mb-3">
         <label class="form-label">Username</label>
@@ -78,13 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
       <button type="submit" class="btn btn-primary w-100 btn-login">Login</button>
     </form>
-
-    <p class="text-center mt-3 small text-muted">
-      Default login: <strong>admin / admin123</strong>
-    </p>
   </div>
 </div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

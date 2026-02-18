@@ -2,8 +2,8 @@
 // admin/dashboard.php
 session_start();
 
-// Check if admin is logged in
-if (!isset($_SESSION['admin_id'])) {
+// Check if admin is logged in (updated for simple login)
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header('Location: admin_login.php');
     exit();
 }
@@ -498,7 +498,7 @@ try {
         
         <ul class="sidebar-menu">
             <li class="sidebar-menu-item">
-                <a href="dashboard.php" class="sidebar-menu-link active">
+                <a href="admin_dashbaord.php" class="sidebar-menu-link active">
                     <i class="fas fa-home"></i>
                     <span class="sidebar-menu-text">Dashboard</span>
                 </a>

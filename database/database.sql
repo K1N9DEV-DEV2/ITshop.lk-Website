@@ -1,19 +1,6 @@
 -- =============================================
 -- IT Shop.LK - Complete Database Schema
 -- =============================================
-
--- Drop tables if they exist (in reverse dependency order)
-DROP TABLE IF EXISTS order_items;
-DROP TABLE IF EXISTS orders;
-DROP TABLE IF EXISTS cart;
-DROP TABLE IF EXISTS product_specs;
-DROP TABLE IF EXISTS products;
-DROP TABLE IF EXISTS categories;
-DROP TABLE IF EXISTS settings;
-DROP TABLE IF EXISTS admins;
-DROP TABLE IF EXISTS users;
-
--- =============================================
 -- ADMINS TABLE
 -- =============================================
 CREATE TABLE admins (

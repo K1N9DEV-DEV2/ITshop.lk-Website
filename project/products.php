@@ -13,7 +13,7 @@ $sort           = $_GET['sort']      ?? 'name_asc';
 $price_min      = $_GET['price_min'] ?? '';
 $price_max      = $_GET['price_max'] ?? '';
 $page           = max(1, (int)($_GET['page'] ?? 1));
-$items_per_page = 12;
+$items_per_page = 15; // updated to 15 to match 5-per-row
 $offset         = ($page - 1) * $items_per_page;
 
 // ── SQL ───────────────────────────────────────────────────────────────────────
@@ -93,10 +93,27 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
 
 <style>
     /* ══════════════════════ PAGE TOKENS ══════════════════════ */
-    /* inherits :root from header.php */
-
-    /* ── page offset for fixed navbar ── */
     .products-page { padding-top: 72px; }
+
+    /* ══════════════ 5-COLUMN GRID ══════════════ */
+    .col-5th {
+        flex: 0 0 20%;
+        max-width: 20%;
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    @media (max-width: 1199px) {
+        .col-5th { flex: 0 0 25%; max-width: 25%; } /* 4 per row */
+    }
+    @media (max-width: 991px) {
+        .col-5th { flex: 0 0 33.3333%; max-width: 33.3333%; } /* 3 per row */
+    }
+    @media (max-width: 767px) {
+        .col-5th { flex: 0 0 50%; max-width: 50%; } /* 2 per row */
+    }
+    @media (max-width: 480px) {
+        .col-5th { flex: 0 0 100%; max-width: 100%; } /* 1 per row */
+    }
 
     /* ══════════════ PAGE HEADER ══════════════ */
     .pg-hero {
@@ -234,10 +251,15 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
     /* ══════════════ PRODUCT GRID ══════════════ */
     .products-section { padding:0 0 5rem; }
 
+    #productsGrid {
+        margin-left: -10px;
+        margin-right: -10px;
+    }
+
     .product-card {
         background:var(--white);
         border-radius:var(--r-lg);
-        padding:1.4rem;
+        padding:1.1rem;
         display:flex; flex-direction:column;
         box-shadow: 0 2px 12px rgba(10,10,15,.07), 0 0 0 1px rgba(10,10,15,.05);
         height:100%;
@@ -260,15 +282,15 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
     /* image area */
     .pc-img {
         position:relative;
-        height:200px;
+        height:160px;
         background:var(--surface);
         border-radius:var(--r-md);
-        margin-bottom:1.1rem;
+        margin-bottom:.9rem;
         display:flex; align-items:center; justify-content:center;
         overflow:hidden;
     }
     .pc-img img { max-width:100%; max-height:100%; object-fit:contain; }
-    .pc-img .ph { font-size:3.5rem; color:var(--ink-3); }
+    .pc-img .ph { font-size:2.8rem; color:var(--ink-3); }
     .pc-img.oos-overlay::after {
         content:''; position:absolute; inset:0;
         background:rgba(255,255,255,.45); border-radius:var(--r-md);
@@ -278,15 +300,15 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
     /* badges */
     .pc-badge {
         position:absolute;
-        padding:4px 10px;
+        padding:3px 8px;
         border-radius:var(--r-full);
-        font-size:.68rem; font-weight:700;
+        font-size:.62rem; font-weight:700;
         letter-spacing:.02em;
         line-height:1;
         z-index:10;
     }
-    .pc-badge.top-r { top:10px; right:10px; }
-    .pc-badge.top-l { top:10px; left:10px; }
+    .pc-badge.top-r { top:8px; right:8px; }
+    .pc-badge.top-l { top:8px; left:8px; }
     .pc-badge.oos-b  { background:rgba(100,100,120,.18); color:#6b6b88; border:1px solid rgba(100,100,120,.2); }
     .pc-badge.low-b  { background:rgba(234,88,12,.1); color:#ea580c; border:1px solid rgba(234,88,12,.2); animation:pulse 2s infinite; }
     .pc-badge.disc-b { background:rgba(16,185,129,.12); color:#059669; border:1px solid rgba(16,185,129,.2); }
@@ -294,47 +316,47 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
 
     /* info block */
     .pc-info { flex:1; display:flex; flex-direction:column; }
-    .pc-brand { font-size:.75rem; font-weight:700; color:var(--ink-3); letter-spacing:.05em; text-transform:uppercase; margin-bottom:.35rem; }
+    .pc-brand { font-size:.68rem; font-weight:700; color:var(--ink-3); letter-spacing:.05em; text-transform:uppercase; margin-bottom:.25rem; }
     .pc-name {
-        font-size:.975rem; font-weight:700; color:var(--ink);
-        margin-bottom:.6rem; line-height:1.4;
+        font-size:.855rem; font-weight:700; color:var(--ink);
+        margin-bottom:.5rem; line-height:1.4;
         display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
-        min-height:2.75rem;
+        min-height:2.4rem;
     }
 
     /* stars */
-    .pc-rating { display:flex; align-items:center; gap:.4rem; margin-bottom:.65rem; }
-    .pc-stars  { color:#f59e0b; font-size:.78rem; display:flex; gap:1px; }
-    .pc-rtxt   { font-size:.78rem; color:var(--ink-3); font-weight:500; }
+    .pc-rating { display:flex; align-items:center; gap:.35rem; margin-bottom:.55rem; }
+    .pc-stars  { color:#f59e0b; font-size:.7rem; display:flex; gap:1px; }
+    .pc-rtxt   { font-size:.7rem; color:var(--ink-3); font-weight:500; }
 
     /* spec tags */
-    .pc-specs { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:.75rem; min-height:28px; }
+    .pc-specs { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:.65rem; min-height:24px; }
     .pc-spec {
-        font-size:.68rem; font-weight:600;
+        font-size:.62rem; font-weight:600;
         background:var(--surface); color:var(--ink-2);
-        padding:3px 8px; border-radius:var(--r-full);
+        padding:2px 7px; border-radius:var(--r-full);
         border:1px solid rgba(0,0,0,.06);
     }
 
     /* stock pill */
-    .pc-stock { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:var(--r-full); font-size:.76rem; font-weight:600; margin-bottom:.85rem; }
+    .pc-stock { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:var(--r-full); font-size:.68rem; font-weight:600; margin-bottom:.7rem; }
     .st-high   { background:rgba(16,185,129,.1);  color:#059669; }
     .st-medium { background:rgba(79,70,229,.1);   color:var(--accent); }
     .st-low    { background:rgba(234,88,12,.1);   color:#ea580c; }
     .st-out    { background:rgba(220,38,38,.08);  color:#dc2626; }
 
     /* price */
-    .pc-price { margin-top:auto; margin-bottom:1rem; display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
-    .pc-curr  { font-size:1.25rem; font-weight:800; color:var(--ink); }
-    .pc-orig  { font-size:.85rem; color:var(--ink-3); text-decoration:line-through; }
+    .pc-price { margin-top:auto; margin-bottom:.85rem; display:flex; align-items:baseline; gap:.4rem; flex-wrap:wrap; }
+    .pc-curr  { font-size:1.05rem; font-weight:800; color:var(--ink); }
+    .pc-orig  { font-size:.78rem; color:var(--ink-3); text-decoration:line-through; }
 
     /* action buttons */
-    .pc-actions { display:flex; flex-direction:column; gap:7px; }
+    .pc-actions { display:flex; flex-direction:column; gap:6px; }
 
     .btn-view {
-        display:flex; align-items:center; justify-content:center; gap:7px;
-        padding:.6rem; border-radius:var(--r-md);
-        font-family:'Red Hat Display',sans-serif; font-size:.84rem; font-weight:600;
+        display:flex; align-items:center; justify-content:center; gap:6px;
+        padding:.5rem; border-radius:var(--r-md);
+        font-family:'Red Hat Display',sans-serif; font-size:.78rem; font-weight:600;
         background:var(--accent-soft); color:var(--accent);
         border:1px solid var(--accent-border);
         text-decoration:none;
@@ -343,9 +365,9 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
     .btn-view:hover { background:var(--accent); color:#fff; text-decoration:none; }
 
     .btn-cart {
-        display:flex; align-items:center; justify-content:center; gap:7px;
-        padding:.6rem; border-radius:var(--r-md);
-        font-family:'Red Hat Display',sans-serif; font-size:.84rem; font-weight:700;
+        display:flex; align-items:center; justify-content:center; gap:6px;
+        padding:.5rem; border-radius:var(--r-md);
+        font-family:'Red Hat Display',sans-serif; font-size:.78rem; font-weight:700;
         background:var(--accent); color:#fff;
         border:none; cursor:pointer;
         box-shadow:0 2px 10px rgba(79,70,229,.28);
@@ -426,9 +448,9 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
     .it-toast .t-close:hover { color:var(--ink); }
 
     /* ══════════════ LIST VIEW ADJUSTMENTS ══════════════ */
-    #productsGrid.list-view .product-col { flex:0 0 100%; max-width:100%; }
+    #productsGrid.list-view .col-5th { flex:0 0 100%; max-width:100%; }
     #productsGrid.list-view .product-card { flex-direction:row; gap:1.25rem; }
-    #productsGrid.list-view .pc-img { width:180px; height:160px; flex-shrink:0; margin-bottom:0; }
+    #productsGrid.list-view .pc-img { width:160px; height:140px; flex-shrink:0; margin-bottom:0; }
     #productsGrid.list-view .pc-info { flex:1; }
     #productsGrid.list-view .pc-actions { flex-direction:row; }
     #productsGrid.list-view .btn-view,
@@ -560,15 +582,15 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
             </div>
 
             <?php else: ?>
-            <!-- Grid -->
-            <div class="row g-4" id="productsGrid">
+            <!-- 5-per-row Grid -->
+            <div class="row g-3" id="productsGrid">
                 <?php foreach ($filtered_products as $product):
                     $img      = ltrim($product['image'], '/');
                     $discount = ($product['original_price'] > $product['price'])
                         ? round((($product['original_price'] - $product['price']) / $product['original_price']) * 100)
                         : 0;
                 ?>
-                <div class="col-lg-4 col-md-6 product-col">
+                <div class="col-5th product-col">
                     <div class="product-card <?= !$product['in_stock']?'oos':'' ?>"
                          data-id="<?= $product['id'] ?>">
 
@@ -595,7 +617,7 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
                             <div class="pc-brand"><?php echo htmlspecialchars($product['brand']); ?></div>
                             <div class="pc-name"><?php echo htmlspecialchars($product['name']); ?></div>
 
-                            <!-- Rating -->
+                            <!-- Rating (commented out)
                             <div class="pc-rating">
                                 <div class="pc-stars">
                                     <?php
@@ -609,24 +631,12 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
                                 </div>
                                 <span class="pc-rtxt"><?= number_format($r,1) ?> (<?= $product['reviews'] ?>)</span>
                             </div>
-
-                            <!-- Specs -->
-                            <?php if (!empty($product['specs'])): ?>
-                            <div class="pc-specs">
-                                <?php foreach (array_slice($product['specs'], 0, 3) as $sp): ?>
-                                <span class="pc-spec"><?php echo htmlspecialchars($sp); ?></span>
-                                <?php endforeach; ?>
-                            </div>
-                            <?php endif; ?>
+                            -->
 
                             <!-- Stock -->
                             <div>
                                 <?php if (!$product['in_stock']): ?>
                                     <span class="pc-stock st-out"><i class="fas fa-circle-xmark"></i> Out of Stock</span>
-                                <?php elseif ($product['stock_count'] <= 5): ?>
-                                    <span class="pc-stock st-low"><i class="fas fa-triangle-exclamation"></i> Only <?= $product['stock_count'] ?> left</span>
-                                <?php elseif ($product['stock_count'] <= 20): ?>
-                                    <span class="pc-stock st-medium"><i class="fas fa-box"></i> <?= $product['stock_count'] ?> available</span>
                                 <?php else: ?>
                                     <span class="pc-stock st-high"><i class="fas fa-circle-check"></i> In Stock</span>
                                 <?php endif; ?>
@@ -643,18 +653,18 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
                             <!-- Actions -->
                             <div class="pc-actions">
                                 <a href="product-details.php?id=<?= $product['id'] ?>" class="btn-view">
-                                    <i class="fas fa-eye" style="font-size:.78rem"></i> View Details
+                                    <i class="fas fa-eye" style="font-size:.72rem"></i> View Details
                                 </a>
                                 <?php if ($product['in_stock']): ?>
                                 <button class="btn-cart"
                                         onclick="addToCart(<?= $product['id'] ?>)"
                                         data-product-id="<?= $product['id'] ?>"
                                         data-in-stock="true">
-                                    <i class="fas fa-cart-plus" style="font-size:.78rem"></i> Add to Cart
+                                    <i class="fas fa-cart-plus" style="font-size:.72rem"></i> Add to Cart
                                 </button>
                                 <?php else: ?>
                                 <button class="btn-cart" disabled>
-                                    <i class="fas fa-ban" style="font-size:.78rem"></i> Unavailable
+                                    <i class="fas fa-ban" style="font-size:.72rem"></i> Unavailable
                                 </button>
                                 <?php endif; ?>
                             </div>
@@ -716,7 +726,7 @@ function addToCart(productId) {
     if (!btn || btn.disabled) return;
 
     const orig   = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:.78rem"></i> Adding…';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:.72rem"></i> Adding…';
     btn.disabled  = true;
 
     fetch('add-to-cart.php', {
@@ -727,7 +737,7 @@ function addToCart(productId) {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            btn.innerHTML = '<i class="fas fa-check" style="font-size:.78rem"></i> Added!';
+            btn.innerHTML = '<i class="fas fa-check" style="font-size:.72rem"></i> Added!';
             btn.style.background = '#059669';
             updateCartUI(data.cart_count, data.cart_total);
             showToast(data.message || 'Added to cart!', 's');

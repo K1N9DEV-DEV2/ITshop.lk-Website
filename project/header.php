@@ -373,7 +373,7 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
                         </ul>
                     </div>
                 <?php else: ?>
-                    <a href="/login.php" class="btn-cta">
+                    <a href="login.php" class="btn-cta">
                         <i class="fas fa-sign-in-alt" style="font-size:.78rem"></i> Login / Sign Up
                     </a>
                 <?php endif; ?>

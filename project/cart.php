@@ -1139,7 +1139,7 @@ document.addEventListener('DOMContentLoaded', function () {
 function printReceipt() { window.print(); }
 function shareCart() {
     if (navigator.share) {
-        navigator.share({ title: 'STC Electronics Cart', text: 'Check out my cart!', url: location.href });
+        navigator.share({ title: 'ITshop.LK Cart', text: 'Check out my cart!', url: location.href });
     } else {
         navigator.clipboard.writeText(location.href).then(() => showToast('Link copied!', 'success'));
     }

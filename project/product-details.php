@@ -1,1084 +1,857 @@
 <?php
-/**
- * product-detail.php
- * Full product page with integrated comment & rating system.
- */
-session_start();
-include 'db.php';
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-$product_id = isset($_GET['id']) ? intval($_GET['id']) : null;
-if (!$product_id) { header('Location: products.php'); exit(); }
+// ── Validate ID before anything else ─────────────────────────────────────────
+$id = (int)($_GET['id'] ?? 0);
+if ($id <= 0) { header('Location: products.php'); exit; }
 
-/* ── cart totals ──────────────────────────────────────────────────── */
-$cart_count = 0;
-$cart_total = 0;
-if (isset($_SESSION['user_id']) && isset($pdo)) {
-    try {
-        $s = $pdo->prepare("SELECT COUNT(*) as c, SUM(price*quantity) as t FROM cart WHERE user_id=?");
-        $s->execute([$_SESSION['user_id']]);
-        $d = $s->fetch(PDO::FETCH_ASSOC);
-        $cart_count = $d['c'] ?? 0;
-        $cart_total = $d['t'] ?? 0;
-    } catch(PDOException $e) { error_log($e->getMessage()); }
-}
-
-/* ── product ──────────────────────────────────────────────────────── */
-try {
-    $s = $pdo->prepare("
-        SELECT p.*, GROUP_CONCAT(CONCAT(ps.spec_name,':',ps.spec_value) SEPARATOR '|') AS specifications
-        FROM products p LEFT JOIN product_specs ps ON p.id=ps.product_id
-        WHERE p.id=? GROUP BY p.id
-    ");
-    $s->execute([$product_id]);
-    $product = $s->fetch(PDO::FETCH_ASSOC);
-    if (!$product) { header('Location: products.php'); exit(); }
-
-    $specs = [];
-    if (!empty($product['specifications']))
-        foreach (explode('|', $product['specifications']) as $sp)
-            if (strpos($sp,':')!==false) { [$k,$v]=explode(':',$sp,2); $specs[$k]=$v; }
-
-    $product['rating']            = $product['rating']            ?? 0;
-    $product['reviews']           = $product['reviews']           ?? 0;
-    $product['brand']             = $product['brand']             ?? 'Unknown';
-    $product['warranty']          = $product['warranty']          ?? '1 Year Warranty';
-    $product['warranty_total']    = $product['warranty_total']    ?? 'Standard Warranty Included';
-    $product['stock_count']       = $product['stock_count']       ?? 0;
-    $product['in_stock']          = $product['in_stock']          ?? ($product['stock_count'] > 0);
-    $product['original_price']    = $product['original_price']    ?? $product['price'];
-    $product['short_description'] = $product['short_description'] ?? '';
-    $product['description']       = $product['description']       ?? $product['short_description'];
-} catch(PDOException $e) { error_log($e->getMessage()); header('Location: products.php'); exit(); }
-
-/* ── review stats ─────────────────────────────────────────────────── */
-try {
-    $s = $pdo->prepare("
-        SELECT COUNT(*) AS total, ROUND(AVG(rating),1) AS avg,
-               SUM(rating=5) AS r5, SUM(rating=4) AS r4, SUM(rating=3) AS r3,
-               SUM(rating=2) AS r2, SUM(rating=1) AS r1
-        FROM product_reviews WHERE product_id=?
-    ");
-    $s->execute([$product_id]);
-    $rev_stats = $s->fetch(PDO::FETCH_ASSOC);
-    $rev_total = intval($rev_stats['total']);
-    $rev_avg   = floatval($rev_stats['avg'] ?? 0);
-} catch(PDOException $e) {
-    $rev_stats = ['total'=>0,'avg'=>0,'r5'=>0,'r4'=>0,'r3'=>0,'r2'=>0,'r1'=>0];
-    $rev_total = 0; $rev_avg = 0;
-}
-
-/* ── logged-in user info for review form ──────────────────────────── */
-$user_name  = '';
-$user_email = '';
-if (isset($_SESSION['user_id']) && isset($pdo)) {
-    try {
-        $s = $pdo->prepare("SELECT name, email FROM users WHERE id=? LIMIT 1");
-        $s->execute([$_SESSION['user_id']]);
-        $u = $s->fetch(PDO::FETCH_ASSOC);
-        $user_name  = $u['name']  ?? '';
-        $user_email = $u['email'] ?? '';
-    } catch(PDOException $e) {}
-}
-
-$already_reviewed = isset($_SESSION['reviewed_'.$product_id]);
-
+// ── Bootstrap: sets $pdo via header.php (same pattern as products.php) ───────
+// We set a temporary page title; it gets overwritten once we have the product name.
+// page_title will be updated below after we know the product name, but
+// header.php needs it now — we'll use a generic fallback.
+$page_title = 'Product Details – IT Shop.LK';
 include 'header.php';
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?php echo htmlspecialchars($product['name']); ?> – STC Electronics</title>
-<meta name="description" content="<?php echo htmlspecialchars($product['short_description']); ?>">
 
-<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+// ── Fetch product ─────────────────────────────────────────────────────────────
+try {
+    $stmt = $pdo->prepare("
+        SELECT p.*, GROUP_CONCAT(ps.spec_name, ':', ps.spec_value ORDER BY ps.id SEPARATOR '||') AS specs
+        FROM products p
+        LEFT JOIN product_specs ps ON p.id = ps.product_id
+        WHERE p.id = ?
+        GROUP BY p.id
+    ");
+    $stmt->execute([$id]);
+    $product = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $product = null;
+}
+
+if (!$product) { header('Location: products.php'); exit; }
+
+// Parse specs into key=>value pairs
+$specs = [];
+if ($product['specs']) {
+    foreach (explode('||', $product['specs']) as $pair) {
+        [$k, $v] = array_pad(explode(':', $pair, 2), 2, '');
+        if ($k) $specs[trim($k)] = trim($v);
+    }
+}
+
+$product['in_stock']       = ($product['stock_count'] > 0);
+$product['original_price'] = $product['original_price'] ?: $product['price'];
+$discount = ($product['original_price'] > $product['price'])
+    ? round((($product['original_price'] - $product['price']) / $product['original_price']) * 100)
+    : 0;
+
+// ── Related products ──────────────────────────────────────────────────────────
+try {
+    $rs = $pdo->prepare("
+        SELECT id, name, brand, price, original_price, image, stock_count
+        FROM products
+        WHERE category = ? AND id != ?
+        ORDER BY RAND()
+        LIMIT 5
+    ");
+    $rs->execute([$product['category'], $id]);
+    $related = $rs->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($related as &$r) {
+        $r['in_stock'] = ($r['stock_count'] > 0);
+        $r['original_price'] = $r['original_price'] ?: $r['price'];
+    }
+    unset($r);
+} catch (PDOException $e) { $related = []; }
+?>
 
 <style>
-/* ══ TOKENS ══════════════════════════════════════════════════ */
-:root{
-    --g:#15c247; --g-dk:#0ea83c; --g-pale:#e8fded;
-    --b:#0ea5e9; --b-pale:#e0f4ff;
-    --surf:#fff; --base:#f3f6fa;
-    --text:#111827; --muted:#6b7280; --border:#e5e7eb;
-    --r-sm:10px; --r-md:18px; --r-lg:26px; --r-xl:36px; --r-pill:999px;
-    --sh-sm:0 2px 8px rgba(0,0,0,.05);
-    --sh-md:0 6px 28px rgba(0,0,0,.08);
-    --sh-lg:0 16px 56px rgba(0,0,0,.12);
-    --font-h:'Nunito',sans-serif;
-    --font-b:'DM Sans',sans-serif;
-}
-*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
-body{font-family:var(--font-b);background:var(--base);color:var(--text)}
+    /* ══════════════════════ PAGE TOKENS ══════════════════════ */
+    .detail-page { padding-top: 72px; }
 
-/* ── Breadcrumb ── */
-.breadbar{background:var(--surf);border-bottom:1px solid var(--border);padding:13px 0;margin-top:80px}
-.breadbar .breadcrumb{margin:0;padding:0;background:transparent}
-.breadbar .breadcrumb-item a{color:var(--muted);text-decoration:none;font-size:.83rem;transition:color .2s}
-.breadbar .breadcrumb-item a:hover{color:var(--g)}
-.breadbar .breadcrumb-item.active{color:var(--text);font-size:.83rem;font-weight:600}
-.breadbar .breadcrumb-item+.breadcrumb-item::before{color:var(--border)}
+    /* ══════════════ HERO BAND ══════════════ */
+    .det-hero {
+        background: var(--ink);
+        padding: 2.5rem 0 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .det-hero::before {
+        content:'';
+        position:absolute; inset:0;
+        background-image:
+            linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+        background-size: 56px 56px;
+        pointer-events: none;
+    }
+    .det-hero::after {
+        content:'';
+        position:absolute;
+        width:500px; height:500px;
+        background: radial-gradient(circle, rgba(79,70,229,.28) 0%, transparent 70%);
+        top:-150px; right:-100px;
+        pointer-events:none;
+    }
+    .det-hero .inner { position:relative; z-index:2; }
 
-/* ── Layout ── */
-.pd-wrap{padding:2.25rem 0 5rem}
+    .det-breadcrumb {
+        display:flex; align-items:center; gap:.4rem;
+        font-size:.8rem; font-weight:600;
+    }
+    .det-breadcrumb a    { color:rgba(255,255,255,.5); text-decoration:none; transition:color .15s; }
+    .det-breadcrumb a:hover { color:rgba(255,255,255,.9); }
+    .det-breadcrumb span { color:rgba(255,255,255,.28); }
+    .det-breadcrumb em   { color:rgba(255,255,255,.85); font-style:normal;
+                           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:320px; }
 
-/* ── Image panel ── */
-.img-panel{position:sticky;top:100px}
-.img-card{
-    background:var(--surf);border-radius:var(--r-xl);padding:2.5rem;
-    height:420px;display:flex;align-items:center;justify-content:center;
-    box-shadow:var(--sh-md);overflow:hidden;position:relative;
-}
-.img-card::before{
-    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
-    background:radial-gradient(ellipse at 25% 20%,rgba(21,194,71,.07),transparent 65%),
-               radial-gradient(ellipse at 80% 80%,rgba(14,165,233,.06),transparent 60%);
-}
-.img-card img{max-width:100%;max-height:100%;object-fit:contain;position:relative;z-index:1;transition:transform .4s cubic-bezier(.34,1.56,.64,1)}
-.img-card:hover img{transform:scale(1.08)}
-.thumbs{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1.1rem}
-.thumb{
-    width:70px;height:70px;border-radius:var(--r-md);border:2px solid var(--border);
-    background:var(--surf);padding:.45rem;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;
-    box-shadow:var(--sh-sm);transition:all .25s;
-}
-.thumb img{width:100%;height:100%;object-fit:contain}
-.thumb:hover,.thumb.active{border-color:var(--g);box-shadow:0 0 0 4px rgba(21,194,71,.15)}
+    /* ══════════════ MAIN CONTENT ══════════════ */
+    .det-body { padding: 2.75rem 0 4rem; }
 
-/* ── Info card ── */
-.info-card{background:var(--surf);border-radius:var(--r-xl);padding:2.25rem;box-shadow:var(--sh-md)}
-.brand-pill{
-    display:inline-flex;align-items:center;gap:.4rem;
-    background:var(--g-pale);color:var(--g-dk);
-    font-family:var(--font-h);font-weight:700;font-size:.75rem;
-    letter-spacing:.07em;text-transform:uppercase;
-    padding:.3rem .9rem;border-radius:var(--r-pill);margin-bottom:.9rem;
-}
-.prod-name{font-family:var(--font-h);font-size:1.7rem;font-weight:900;line-height:1.25;margin-bottom:.65rem}
-.short-desc{color:var(--muted);font-size:.93rem;line-height:1.65;margin-bottom:1.1rem}
+    /* ── Image Panel ── */
+    .img-panel {
+        background: var(--white);
+        border-radius: var(--r-lg);
+        box-shadow: 0 2px 12px rgba(10,10,15,.07), 0 0 0 1px rgba(10,10,15,.05);
+        padding: 1.5rem;
+        position: sticky;
+        top: 90px;
+    }
+    .main-img-wrap {
+        background: var(--surface);
+        border-radius: var(--r-md);
+        display: flex; align-items: center; justify-content: center;
+        height: 320px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+        position: relative;
+    }
+    .main-img-wrap img {
+        max-width: 100%; max-height: 100%;
+        object-fit: contain;
+        transition: transform .4s ease;
+    }
+    .main-img-wrap:hover img { transform: scale(1.05); }
+    .main-img-wrap .oos-ribbon {
+        position:absolute; top:16px; right:16px;
+        background:rgba(220,38,38,.1); color:#dc2626;
+        border:1px solid rgba(220,38,38,.2);
+        border-radius:var(--r-full);
+        font-size:.72rem; font-weight:700;
+        padding:4px 12px;
+    }
+    .disc-ribbon {
+        position:absolute; top:16px; left:16px;
+        background:rgba(16,185,129,.12); color:#059669;
+        border:1px solid rgba(16,185,129,.2);
+        border-radius:var(--r-full);
+        font-size:.72rem; font-weight:700;
+        padding:4px 12px;
+    }
 
-.rating-row{
-    display:flex;align-items:center;gap:.7rem;
-    padding:.9rem 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:1.4rem;
-}
-.stars i{color:#f59e0b;font-size:.95rem}
-.r-num{font-weight:700;font-size:.9rem}
-.r-link{color:var(--b);font-size:.83rem;cursor:pointer;text-decoration:none}
-.r-link:hover{text-decoration:underline}
+    /* thumbs row (optional extra images – shown only if you add them) */
+    .img-thumbs { display:flex; gap:8px; flex-wrap:wrap; }
+    .img-thumb {
+        width:64px; height:64px;
+        border-radius:var(--r-sm);
+        border:2px solid transparent;
+        background:var(--surface);
+        display:flex; align-items:center; justify-content:center;
+        overflow:hidden; cursor:pointer;
+        transition:border-color .15s;
+    }
+    .img-thumb.active, .img-thumb:hover { border-color:var(--accent); }
+    .img-thumb img { max-width:100%; max-height:100%; object-fit:contain; }
 
-.price-block{
-    background:linear-gradient(135deg,#f0fff5,#e0f4ff);
-    border:1px solid rgba(21,194,71,.15);border-radius:var(--r-lg);
-    padding:1.2rem 1.5rem;display:flex;align-items:center;flex-wrap:wrap;gap:.9rem;margin-bottom:1.4rem;
-}
-.p-now{font-family:var(--font-h);font-size:2.3rem;font-weight:900;color:var(--g-dk);line-height:1}
-.p-was{font-size:.95rem;color:var(--muted);text-decoration:line-through;margin-top:.2rem}
-.save-badge{background:var(--g);color:#fff;font-family:var(--font-h);font-weight:800;font-size:.78rem;padding:.3rem .85rem;border-radius:var(--r-pill);margin-left:auto}
+    /* ── Info Panel ── */
+    .info-panel { display:flex; flex-direction:column; gap:.1rem; }
 
-.chip{display:inline-flex;align-items:center;gap:.5rem;padding:.55rem 1.1rem;border-radius:var(--r-pill);font-weight:600;font-size:.85rem;margin-bottom:1.2rem}
-.chip.ok {background:#e8fded;color:#0ea83c}
-.chip.low{background:#fff7e6;color:#b45309}
-.chip.out{background:#fff1f2;color:#e11d48}
-.chip .dot{width:7px;height:7px;border-radius:50%}
-.chip.ok  .dot{background:#15c247;animation:blink 1.5s infinite}
-.chip.low .dot{background:#f59e0b;animation:blink 1.5s infinite}
-.chip.out .dot{background:#f43f5e}
-@keyframes blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.7)}}
+    .det-brand {
+        font-size:.76rem; font-weight:700; color:var(--accent);
+        letter-spacing:.07em; text-transform:uppercase;
+    }
+    .det-name {
+        font-family:'Red Hat Display',sans-serif;
+        font-size: clamp(1.35rem, 3vw, 1.8rem);
+        font-weight:900; color:var(--ink);
+        letter-spacing:-.02em; line-height:1.25;
+        margin:.35rem 0 .6rem;
+    }
 
-.warranty-box{
-    display:flex;align-items:flex-start;gap:.9rem;
-    background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r-lg);
-    padding:1rem 1.2rem;margin-bottom:1.4rem;
-}
-.w-icon{width:38px;height:38px;flex-shrink:0;background:#fef3c7;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:#d97706;font-size:1rem}
-.w-text h6{font-family:var(--font-h);font-weight:700;color:#92400e;margin-bottom:.2rem;font-size:.9rem}
-.w-text p{font-size:.82rem;color:#a16207;margin:0}
+    /* Rating row */
+    .det-rating { display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem; }
+    .det-stars  { color:#f59e0b; font-size:.82rem; display:flex; gap:2px; }
+    .det-rtxt   { font-size:.8rem; color:var(--ink-3); font-weight:500; }
 
-.qty-row{display:flex;align-items:center;gap:.9rem;margin-bottom:1.4rem}
-.qty-label{font-weight:600;font-size:.88rem}
-.qty-ctrl{display:flex;align-items:center;background:var(--base);border:1.5px solid var(--border);border-radius:var(--r-pill);overflow:hidden}
-.qty-ctrl button{background:none;border:none;width:38px;height:38px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .2s;font-size:.85rem}
-.qty-ctrl button:hover{background:var(--border);color:var(--text)}
-.qty-ctrl input{border:none;background:none;width:46px;text-align:center;font-weight:700;font-size:.95rem;color:var(--text)}
+    /* Price row */
+    .det-price-row {
+        display:flex; align-items:baseline; gap:.7rem; flex-wrap:wrap;
+        padding:1rem 0; border-top:1px solid rgba(0,0,0,.06); border-bottom:1px solid rgba(0,0,0,.06);
+        margin-bottom:1.1rem;
+    }
+    .det-curr {
+        font-family:'Red Hat Display',sans-serif;
+        font-size:2rem; font-weight:900; color:var(--ink);
+    }
+    .det-orig { font-size:.95rem; color:var(--ink-3); text-decoration:line-through; }
+    .det-save {
+        font-size:.8rem; font-weight:700; color:#059669;
+        background:rgba(16,185,129,.1); border:1px solid rgba(16,185,129,.2);
+        border-radius:var(--r-full); padding:3px 10px;
+    }
 
-.act-row{display:flex;gap:.7rem;flex-wrap:wrap}
-.btn-cart,.btn-buy,.btn-wish{
-    display:inline-flex;align-items:center;justify-content:center;gap:.45rem;
-    border:none;cursor:pointer;font-family:var(--font-h);font-weight:700;font-size:.95rem;
-    border-radius:var(--r-pill);padding:.8rem 1.6rem;
-    transition:all .3s cubic-bezier(.34,1.56,.64,1);
-}
-.btn-cart{flex:1;background:var(--g);color:#fff;box-shadow:0 4px 18px rgba(21,194,71,.32)}
-.btn-cart:hover{background:var(--g-dk);transform:translateY(-2px);box-shadow:0 8px 26px rgba(21,194,71,.42)}
-.btn-cart:active{transform:scale(.97)}
-.btn-buy{flex:1;background:var(--b);color:#fff;box-shadow:0 4px 18px rgba(14,165,233,.28)}
-.btn-buy:hover{background:#0284c7;transform:translateY(-2px);box-shadow:0 8px 26px rgba(14,165,233,.38)}
-.btn-buy:active{transform:scale(.97)}
-.btn-wish{background:var(--surf);color:var(--muted);border:1.5px solid var(--border);padding:.8rem 1rem}
-.btn-wish:hover{border-color:#f43f5e;color:#f43f5e;background:#fff1f2;transform:scale(1.07)}
-.btn-cart[disabled]{background:#d1d5db;box-shadow:none;cursor:not-allowed}
+    /* Stock status */
+    .det-stock {
+        display:inline-flex; align-items:center; gap:6px;
+        padding:.45rem 1rem; border-radius:var(--r-full);
+        font-size:.82rem; font-weight:700;
+        margin-bottom:1.1rem;
+    }
+    .st-in  { background:rgba(16,185,129,.1);  color:#059669; border:1px solid rgba(16,185,129,.2); }
+    .st-out { background:rgba(220,38,38,.08);   color:#dc2626; border:1px solid rgba(220,38,38,.15); }
+    .st-low { background:rgba(234,88,12,.1);    color:#ea580c; border:1px solid rgba(234,88,12,.2); animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
 
-/* ── Tabs ── */
-.tabs-wrap{margin-top:2.25rem}
-.tab-pills{display:flex;gap:.5rem;flex-wrap:wrap;border:none;margin-bottom:0}
-.tab-pills .nav-link{
-    font-family:var(--font-h);font-weight:700;font-size:.88rem;
-    color:var(--muted);background:var(--surf);
-    border:1.5px solid var(--border) !important;border-radius:var(--r-pill) !important;
-    padding:.55rem 1.3rem;transition:all .25s;
-}
-.tab-pills .nav-link.active,.tab-pills .nav-link:hover{
-    background:var(--g);color:#fff !important;border-color:var(--g) !important;
-    box-shadow:0 4px 14px rgba(21,194,71,.28);
-}
-.tab-body{background:var(--surf);border-radius:var(--r-xl);padding:2rem;margin-top:1rem;box-shadow:var(--sh-md)}
-.tab-body h4{font-family:var(--font-h);font-weight:800;font-size:1.1rem;margin-bottom:1.4rem;color:var(--text)}
+    /* Quantity selector */
+    .qty-row { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; }
+    .qty-label { font-size:.82rem; font-weight:700; color:var(--ink-2); }
+    .qty-ctrl {
+        display:flex; align-items:center; gap:0;
+        border:1px solid rgba(0,0,0,.1); border-radius:var(--r-md);
+        overflow:hidden;
+    }
+    .qty-btn {
+        width:36px; height:36px;
+        background:var(--surface); border:none; cursor:pointer;
+        font-size:.88rem; color:var(--ink-2);
+        display:flex; align-items:center; justify-content:center;
+        transition:background .15s, color .15s;
+    }
+    .qty-btn:hover:not(:disabled) { background:var(--accent-soft); color:var(--accent); }
+    .qty-btn:disabled { cursor:not-allowed; opacity:.4; }
+    .qty-input {
+        width:48px; height:36px;
+        border:none; border-left:1px solid rgba(0,0,0,.08); border-right:1px solid rgba(0,0,0,.08);
+        text-align:center;
+        font-family:'Red Hat Display',sans-serif; font-size:.9rem; font-weight:700;
+        color:var(--ink);
+        background:var(--white);
+    }
+    .qty-input:focus { outline:none; }
 
-.spec-grid{display:grid;gap:.4rem}
-.spec-row{display:grid;grid-template-columns:190px 1fr;border-radius:var(--r-sm);overflow:hidden}
-.spec-row:nth-child(odd) .spec-k{background:rgba(21,194,71,.07)}
-.spec-row:nth-child(odd) .spec-v{background:#fafcfa}
-.spec-k{padding:.72rem 1rem;font-weight:600;font-size:.84rem;color:var(--text);background:rgba(21,194,71,.04)}
-.spec-v{padding:.72rem 1rem;font-size:.84rem;color:var(--muted);background:#fff}
+    /* CTA buttons */
+    .det-actions { display:flex; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .btn-det-cart {
+        flex:1; min-width:160px;
+        display:flex; align-items:center; justify-content:center; gap:8px;
+        padding:.75rem 1.5rem;
+        background:var(--accent); color:#fff;
+        border:none; border-radius:var(--r-md); cursor:pointer;
+        font-family:'Red Hat Display',sans-serif; font-size:.92rem; font-weight:700;
+        box-shadow:0 4px 18px rgba(79,70,229,.3);
+        transition:background .15s, transform .15s, box-shadow .15s;
+    }
+    .btn-det-cart:hover:not(:disabled) {
+        background:var(--accent-dark);
+        transform:translateY(-2px);
+        box-shadow:0 6px 24px rgba(79,70,229,.4);
+    }
+    .btn-det-cart:disabled { background:var(--surface); color: #fff; box-shadow:none; cursor:not-allowed; border:1px solid rgba(0,0,0,.08); }
 
-/* ══════════════════════════════════════════
-   REVIEW SYSTEM
-══════════════════════════════════════════ */
+    .btn-det-wish {
+        width:48px; height:48px;
+        display:flex; align-items:center; justify-content:center;
+        border:1px solid rgba(0,0,0,.1); border-radius:var(--r-md);
+        background:var(--white); color:var(--ink-3); cursor:pointer;
+        font-size:.9rem;
+        transition:background .15s, color .15s, border-color .15s;
+    }
+    .btn-det-wish:hover { background:#fee2e2; color:#dc2626; border-color:#fca5a5; }
+    .btn-det-wish.active { background:#fee2e2; color:#dc2626; border-color:#fca5a5; }
 
-/* Overview block */
-.rev-overview{
-    display:grid;grid-template-columns:140px 1fr;gap:2rem;align-items:center;
-    background:linear-gradient(135deg,#f0fff5,#e8f4ff);
-    border:1px solid rgba(21,194,71,.12);border-radius:var(--r-xl);
-    padding:1.75rem;margin-bottom:1.75rem;
-}
-.score-big .num{font-family:var(--font-h);font-size:3.8rem;font-weight:900;color:var(--g-dk);line-height:1}
-.score-big .big-stars{display:flex;gap:3px;margin:.4rem 0}
-.score-big .big-stars i{color:#f59e0b;font-size:1.1rem}
-.score-big .sub{font-size:.78rem;color:var(--muted);font-weight:500}
+    /* Meta chips */
+    .det-meta { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.9rem; }
+    .det-chip {
+        display:inline-flex; align-items:center; gap:5px;
+        padding:.35rem .8rem; border-radius:var(--r-full);
+        font-size:.72rem; font-weight:600; color:var(--ink-2);
+        background:var(--surface); border:1px solid rgba(0,0,0,.07);
+    }
+    .det-chip i { color:var(--accent); font-size:.68rem; }
 
-.bars{display:flex;flex-direction:column;gap:.55rem}
-.bar-row{display:flex;align-items:center;gap:.65rem}
-.bar-lbl{font-size:.78rem;font-weight:700;color:var(--text);white-space:nowrap;min-width:28px}
-.bar-track{flex:1;height:8px;background:var(--border);border-radius:var(--r-pill);overflow:hidden}
-.bar-fill{height:100%;border-radius:var(--r-pill);background:linear-gradient(90deg,var(--g),#7ee8a2);transition:width .9s cubic-bezier(.34,1.56,.64,1)}
-.bar-cnt{font-size:.78rem;color:var(--muted);min-width:20px;text-align:right}
+    /* ══════════════ TABS ══════════════ */
+    .det-tabs { padding:2.5rem 0 4rem; border-top:1px solid rgba(0,0,0,.06); }
+    .tab-nav {
+        display:flex; gap:0;
+        border-bottom:2px solid rgba(0,0,0,.07);
+        margin-bottom:2rem;
+        flex-wrap:wrap;
+    }
+    .tab-btn {
+        padding:.65rem 1.35rem;
+        background:none; border:none; border-bottom:3px solid transparent;
+        margin-bottom:-2px;
+        font-family:'Red Hat Display',sans-serif; font-size:.88rem; font-weight:700;
+        color:var(--ink-3); cursor:pointer;
+        transition:color .15s, border-color .15s;
+    }
+    .tab-btn:hover  { color:var(--ink); }
+    .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
 
-/* Toolbar */
-.rev-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:.65rem;margin-bottom:1.4rem}
-.sort-label{font-size:.82rem;font-weight:600;color:var(--muted);white-space:nowrap}
-.sort-btns{display:flex;gap:.4rem;flex-wrap:wrap}
-.sort-btn{
-    background:var(--base);border:1.5px solid var(--border);border-radius:var(--r-pill);
-    padding:.32rem .85rem;font-family:var(--font-h);font-size:.78rem;font-weight:700;
-    color:var(--muted);cursor:pointer;transition:all .2s;
-}
-.sort-btn:hover,.sort-btn.active{background:var(--g);border-color:var(--g);color:#fff}
-.btn-write-rev{
-    margin-left:auto;background:linear-gradient(135deg,var(--g),var(--b));
-    color:#fff;border:none;border-radius:var(--r-pill);padding:.52rem 1.35rem;
-    font-family:var(--font-h);font-weight:700;font-size:.85rem;cursor:pointer;
-    transition:transform .2s,box-shadow .2s;white-space:nowrap;
-}
-.btn-write-rev:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(21,194,71,.3)}
-.btn-write-rev:disabled{opacity:.55;cursor:not-allowed;transform:none}
+    /* Specs table */
+    .specs-table { width:100%; border-collapse:collapse; }
+    .specs-table tr { border-bottom:1px solid rgba(0,0,0,.05); }
+    .specs-table tr:last-child { border-bottom:none; }
+    .specs-table td {
+        padding:.7rem .9rem; font-size:.875rem;
+    }
+    .specs-table td:first-child {
+        width:38%; font-weight:700; color:var(--ink-2);
+        background:var(--surface);
+    }
+    .specs-table td:last-child { color:var(--ink); }
+    .specs-table tr:nth-child(even) td:last-child { background:rgba(0,0,0,.012); }
 
-/* Review list */
-.rev-list{display:flex;flex-direction:column;gap:.9rem}
-.rev-card{
-    background:var(--surf);border:1.5px solid var(--border);border-radius:var(--r-lg);
-    padding:1.3rem 1.5rem;transition:box-shadow .25s,transform .25s;
-    animation:revIn .4s ease both;
-}
-.rev-card:hover{box-shadow:var(--sh-md);transform:translateY(-2px)}
-@keyframes revIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    /* Description */
+    .det-desc { font-size:.92rem; color:var(--ink-2); line-height:1.8; }
+    .det-desc p { margin-bottom:1rem; }
 
-.rev-head{display:flex;align-items:flex-start;gap:.9rem;margin-bottom:.8rem}
-.avatar{
-    width:42px;height:42px;flex-shrink:0;border-radius:50%;
-    background:linear-gradient(135deg,var(--g-pale),var(--b-pale));
-    display:flex;align-items:center;justify-content:center;
-    font-family:var(--font-h);font-weight:800;font-size:.85rem;color:var(--g-dk);
-    border:2px solid rgba(21,194,71,.2);
-}
-.rev-meta{flex:1}
-.rev-name-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.2rem}
-.rev-name{font-family:var(--font-h);font-weight:700;font-size:.93rem;color:var(--text)}
-.v-badge{
-    display:inline-flex;align-items:center;gap:.22rem;
-    background:var(--g-pale);color:var(--g-dk);
-    font-size:.68rem;font-weight:700;padding:.12rem .5rem;border-radius:var(--r-pill);
-}
-.rev-date{font-size:.76rem;color:var(--muted)}
-.rev-stars-row{display:flex;gap:2px;margin-top:.2rem}
-.rev-stars-row i{color:#f59e0b;font-size:.82rem}
-.rev-stars-row i.e{color:#e5e7eb}
+    /* ══════════════ RELATED PRODUCTS ══════════════ */
+    .related-section { padding:0 0 5rem; }
+    .section-heading {
+        font-family:'Red Hat Display',sans-serif;
+        font-size:1.4rem; font-weight:900; color:var(--ink);
+        letter-spacing:-.02em; margin-bottom:1.5rem;
+    }
+    .section-heading span { color:var(--accent); }
 
-.rev-rating-badge{
-    flex-shrink:0;
-    width:34px;height:34px;border-radius:10px;
-    display:flex;align-items:center;justify-content:center;
-    font-family:var(--font-h);font-weight:900;font-size:.9rem;color:#fff;
-}
-.rb-5,.rb-4{background:var(--g)}
-.rb-3{background:#f59e0b}
-.rb-2,.rb-1{background:#f43f5e}
+    /* reuse col-5th from products.php */
+    .col-5th {
+        flex: 0 0 20%; max-width: 20%;
+        padding-left: 10px; padding-right: 10px;
+    }
+    @media (max-width:1199px) { .col-5th { flex:0 0 25%; max-width:25%; } }
+    @media (max-width:991px)  { .col-5th { flex:0 0 33.333%; max-width:33.333%; } }
+    @media (max-width:767px)  { .col-5th { flex:0 0 50%; max-width:50%; } }
+    @media (max-width:480px)  { .col-5th { flex:0 0 100%; max-width:100%; } }
 
-.rev-title{font-family:var(--font-h);font-weight:700;font-size:.98rem;margin-bottom:.35rem;color:var(--text)}
-.rev-body{font-size:.875rem;color:var(--muted);line-height:1.7;margin-bottom:.85rem}
+    .product-card {
+        background:var(--white); border-radius:var(--r-lg); padding:1.1rem;
+        display:flex; flex-direction:column;
+        box-shadow:0 2px 12px rgba(10,10,15,.07), 0 0 0 1px rgba(10,10,15,.05);
+        height:100%; transition:transform .28s ease, box-shadow .28s ease;
+        position:relative; overflow:hidden;
+    }
+    .product-card::before {
+        content:''; position:absolute; top:0; left:0; right:0; height:3px;
+        background:linear-gradient(90deg, var(--accent), #34d399);
+        transform:scaleX(0); transform-origin:left; transition:transform .3s ease;
+        border-radius:var(--r-lg) var(--r-lg) 0 0;
+    }
+    .product-card:hover { transform:translateY(-5px); box-shadow:0 16px 40px rgba(10,10,15,.13), 0 0 0 1px rgba(79,70,229,.1); }
+    .product-card:hover::before { transform:scaleX(1); }
 
-.rev-foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem}
-.helpful-row{display:flex;align-items:center;gap:.5rem}
-.helpful-lbl{font-size:.76rem;color:var(--muted)}
-.btn-helpful{
-    display:inline-flex;align-items:center;gap:.32rem;
-    background:var(--base);border:1.5px solid var(--border);border-radius:var(--r-pill);
-    padding:.26rem .72rem;font-size:.76rem;font-weight:600;color:var(--muted);cursor:pointer;transition:all .2s;
-}
-.btn-helpful:hover{border-color:var(--g);color:var(--g);background:var(--g-pale)}
-.btn-helpful.voted{border-color:var(--g);color:var(--g);background:var(--g-pale);cursor:default}
+    .pc-img {
+        position:relative; height:140px; background:var(--surface);
+        border-radius:var(--r-md); margin-bottom:.9rem;
+        display:flex; align-items:center; justify-content:center; overflow:hidden;
+    }
+    .pc-img img { max-width:100%; max-height:100%; object-fit:contain; }
+    .pc-img .ph { font-size:2.4rem; color:var(--ink-3); }
+    .pc-badge { position:absolute; padding:3px 8px; border-radius:var(--r-full); font-size:.62rem; font-weight:700; letter-spacing:.02em; line-height:1; z-index:10; }
+    .pc-badge.top-r { top:8px; right:8px; }
+    .pc-badge.disc-b { background:rgba(16,185,129,.12); color:#059669; border:1px solid rgba(16,185,129,.2); }
+    .pc-badge.oos-b  { background:rgba(100,100,120,.18); color:#6b6b88; border:1px solid rgba(100,100,120,.2); }
 
-/* Pagination */
-.rev-pagination{display:flex;justify-content:center;gap:.45rem;flex-wrap:wrap;margin-top:1.5rem}
-.pg-btn{
-    width:36px;height:36px;border-radius:50%;border:1.5px solid var(--border);
-    background:var(--surf);color:var(--muted);font-family:var(--font-h);font-weight:700;font-size:.82rem;
-    cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;
-}
-.pg-btn:hover,.pg-btn.active{background:var(--g);border-color:var(--g);color:#fff;box-shadow:0 4px 12px rgba(21,194,71,.3)}
-.pg-btn:disabled{opacity:.4;cursor:not-allowed}
+    .pc-info { flex:1; display:flex; flex-direction:column; }
+    .pc-brand { font-size:.68rem; font-weight:700; color:var(--ink-3); letter-spacing:.05em; text-transform:uppercase; margin-bottom:.25rem; }
+    .pc-name {
+        font-size:.855rem; font-weight:700; color:var(--ink); margin-bottom:.6rem; line-height:1.4;
+        display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:2.4rem;
+    }
+    .pc-price { margin-top:auto; margin-bottom:.85rem; display:flex; align-items:baseline; gap:.4rem; flex-wrap:wrap; }
+    .pc-curr  { font-size:1.05rem; font-weight:800; color:var(--ink); }
+    .pc-orig  { font-size:.78rem; color:var(--ink-3); text-decoration:line-through; }
 
-/* Empty state */
-.rev-empty-state{text-align:center;padding:2.5rem 1rem}
-.empty-icon-wrap{
-    width:72px;height:72px;border-radius:50%;
-    background:linear-gradient(135deg,#fef3c7,#fde68a);
-    display:flex;align-items:center;justify-content:center;
-    font-size:1.8rem;color:#f59e0b;margin:0 auto 1rem;
-}
-.rev-empty-state h5{font-family:var(--font-h);font-weight:800;margin-bottom:.4rem}
-.rev-empty-state p{color:var(--muted);font-size:.88rem;margin-bottom:1.2rem}
+    .pc-actions { display:flex; flex-direction:column; gap:6px; }
+    .btn-view {
+        display:flex; align-items:center; justify-content:center; gap:6px;
+        padding:.5rem; border-radius:var(--r-md);
+        font-family:'Red Hat Display',sans-serif; font-size:.78rem; font-weight:600;
+        background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-border);
+        text-decoration:none; transition:background .15s, color .15s;
+    }
+    .btn-view:hover { background:var(--accent); color:#fff; text-decoration:none; }
+    .btn-cart {
+        display:flex; align-items:center; justify-content:center; gap:6px;
+        padding:.5rem; border-radius:var(--r-md);
+        font-family:'Red Hat Display',sans-serif; font-size:.78rem; font-weight:700;
+        background:var(--accent); color:#fff; border:none; cursor:pointer;
+        box-shadow:0 2px 10px rgba(79,70,229,.28);
+        transition:background .15s, transform .15s, box-shadow .15s;
+    }
+    .btn-cart:hover:not(:disabled) { background:var(--accent-dark); transform:translateY(-1px); box-shadow:0 4px 16px rgba(79,70,229,.38); }
+    .btn-cart:disabled { background:var(--surface); color:var(--ink-3); box-shadow:none; cursor:not-allowed; border:1px solid rgba(0,0,0,.08); }
 
-/* Loading spinner */
-.rev-loading{text-align:center;padding:2rem;color:var(--muted)}
-.rev-loading i{font-size:1.8rem;animation:spin 1s linear infinite;color:var(--g)}
-@keyframes spin{to{transform:rotate(360deg)}}
+    /* ══════════════ TOAST (same as products.php) ══════════════ */
+    .it-toast {
+        position:fixed; top:90px; right:20px; z-index:9999;
+        display:flex; align-items:flex-start; gap:10px;
+        min-width:280px; max-width:360px;
+        background:var(--white); border:1px solid rgba(0,0,0,.08);
+        border-radius:var(--r-lg); box-shadow:0 8px 32px rgba(13,13,20,.14);
+        padding:.9rem 1rem; animation:toastIn .25s ease;
+        font-family:'Red Hat Display',sans-serif;
+    }
+    @keyframes toastIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+    .it-toast .t-icon { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:.85rem; }
+    .it-toast .t-icon.s { background:rgba(16,185,129,.12); color:#059669; }
+    .it-toast .t-icon.e { background:rgba(220,38,38,.1);   color:#dc2626; }
+    .it-toast .t-icon.i { background:var(--accent-soft);   color:var(--accent); }
+    .it-toast .t-body  { flex:1; font-size:.855rem; font-weight:500; color:var(--ink-2); line-height:1.4; padding-top:5px; }
+    .it-toast .t-close { background:none; border:none; cursor:pointer; color:var(--ink-3); font-size:.8rem; padding:4px; line-height:1; flex-shrink:0; margin-top:2px; transition:color .15s; }
+    .it-toast .t-close:hover { color:var(--ink); }
 
-/* ── Write Review Form ── */
-.write-form-wrap{
-    background:linear-gradient(135deg,#f0fff5,#e8f4ff);
-    border:1.5px solid rgba(21,194,71,.18);border-radius:var(--r-xl);
-    padding:1.75rem;margin-top:1.75rem;
-}
-.write-form-wrap h5{font-family:var(--font-h);font-weight:800;margin-bottom:1.3rem;color:var(--text)}
+    /* ══════════════ ANIMATE IN ══════════════ */
+    .product-card { opacity:0; transform:translateY(20px); }
+    .product-card.visible { opacity:1; transform:translateY(0); transition:opacity .5s ease, transform .5s ease, box-shadow .28s ease, transform .28s ease; }
 
-.form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-.form-group{margin-bottom:1rem}
-.form-group label{display:block;font-weight:600;font-size:.84rem;color:var(--text);margin-bottom:.4rem}
-.form-inp,.form-ta{
-    width:100%;border:1.5px solid var(--border);border-radius:var(--r-md);
-    padding:.65rem 1rem;font-family:var(--font-b);font-size:.9rem;
-    background:var(--surf);color:var(--text);transition:border-color .2s,box-shadow .2s;outline:none;
-}
-.form-inp:focus,.form-ta:focus{border-color:var(--g);box-shadow:0 0 0 3px rgba(21,194,71,.13)}
-.form-ta{resize:vertical;min-height:110px}
-
-/* Inline star picker */
-.star-picker{display:flex;gap:.4rem;margin-top:.35rem}
-.star-picker i{font-size:2rem;color:#d1d5db;cursor:pointer;transition:color .15s,transform .15s}
-.star-picker i:hover,.star-picker i.on{color:#f59e0b;transform:scale(1.2)}
-.star-hint{font-size:.78rem;color:var(--muted);margin-top:.3rem;min-height:1.2em}
-
-.submit-row{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-top:.5rem}
-.btn-submit-rev{
-    background:linear-gradient(135deg,var(--g),var(--b));color:#fff;
-    border:none;border-radius:var(--r-pill);padding:.75rem 2rem;
-    font-family:var(--font-h);font-weight:700;font-size:.95rem;cursor:pointer;
-    transition:transform .2s,box-shadow .2s;
-}
-.btn-submit-rev:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(21,194,71,.35)}
-.btn-submit-rev:active{transform:scale(.97)}
-.btn-submit-rev:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
-.form-msg{font-size:.83rem;font-weight:600}
-.form-msg.ok{color:var(--g-dk)}
-.form-msg.err{color:#e11d48}
-
-/* Already-reviewed notice */
-.already-notice{
-    display:flex;align-items:center;gap:.75rem;
-    background:var(--g-pale);border:1.5px solid rgba(21,194,71,.25);
-    border-radius:var(--r-lg);padding:1rem 1.3rem;
-    font-size:.88rem;color:var(--g-dk);font-weight:600;
-    margin-top:1.75rem;
-}
-.already-notice i{font-size:1.2rem}
-
-/* ── WhatsApp FAB ── */
-.wa-fab{
-    position:fixed;bottom:24px;right:24px;width:58px;height:58px;
-    background:#25d366;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    font-size:1.7rem;color:#fff;text-decoration:none;
-    box-shadow:0 6px 22px rgba(37,211,102,.42);z-index:1000;
-    transition:transform .3s cubic-bezier(.34,1.56,.64,1),box-shadow .3s;
-}
-.wa-fab:hover{transform:scale(1.12);box-shadow:0 10px 30px rgba(37,211,102,.5);color:#fff}
-
-/* ── Toast ── */
-.toast-shelf{position:fixed;top:100px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:.5rem;pointer-events:none}
-.toast-item{
-    background:#fff;border-radius:var(--r-lg);padding:.8rem 1.2rem;
-    display:flex;align-items:center;gap:.7rem;
-    box-shadow:0 8px 28px rgba(0,0,0,.13);font-size:.88rem;font-weight:500;
-    pointer-events:all;animation:tIn .35s cubic-bezier(.34,1.56,.64,1);
-    min-width:250px;max-width:340px;border-left:4px solid var(--g);
-}
-.toast-item.err{border-left-color:#f43f5e}
-.t-icon{font-size:1.05rem;flex-shrink:0}
-.toast-item.ok  .t-icon{color:var(--g)}
-.toast-item.err .t-icon{color:#f43f5e}
-@keyframes tIn {from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
-@keyframes tOut{from{transform:translateX(0);opacity:1}to{transform:translateX(110%);opacity:0}}
-
-/* Responsive */
-@media(max-width:768px){
-    .prod-name{font-size:1.4rem}.p-now{font-size:1.85rem}
-    .act-row{flex-direction:column}.img-panel{position:static}
-    .spec-row{grid-template-columns:1fr}
-    .rev-overview{grid-template-columns:1fr}
-    .score-big{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
-    .form-row-2{grid-template-columns:1fr}
-}
+    @media (max-width:991px) {
+        .img-panel { position:static; margin-bottom:2rem; }
+        .main-img-wrap { height:260px; }
+    }
 </style>
-</head>
-<body>
 
-<!-- Breadcrumb -->
-<div class="breadbar">
-    <div class="container">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="index.php"><i class="fas fa-home me-1"></i>Home</a></li>
-                <li class="breadcrumb-item"><a href="products.php">Products</a></li>
-                <li class="breadcrumb-item"><a href="products.php?category=<?php echo urlencode($product['category']); ?>"><?php echo htmlspecialchars(ucfirst($product['category'])); ?></a></li>
-                <li class="breadcrumb-item active"><?php echo htmlspecialchars($product['name']); ?></li>
-            </ol>
-        </nav>
-    </div>
-</div>
+<div class="detail-page">
 
-<!-- Main -->
-<div class="pd-wrap">
-<div class="container">
-<div class="row g-4">
-
-    <!-- Images -->
-    <div class="col-lg-5">
-        <div class="img-panel">
-            <div class="img-card">
-                <img id="mainImg"
-                     src="<?php echo htmlspecialchars($product['image']); ?>"
-                     alt="<?php echo htmlspecialchars($product['name']); ?>"
-                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'300\' height=\'300\'%3E%3Crect width=\'300\' height=\'300\' fill=\'%23f3f6fa\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' font-size=\'16px\' fill=\'%23aaa\'%3ENo Image%3C/text%3E%3C/svg%3E';">
+    <!-- ── Hero Band ── -->
+    <div class="det-hero">
+        <div class="container inner">
+            <div class="det-breadcrumb">
+                <a href="index.php">Home</a>
+                <span>/</span>
+                <a href="products.php">Products</a>
+                <span>/</span>
+                <a href="products.php?category=<?php echo urlencode($product['category']); ?>">
+                    <?php echo htmlspecialchars(ucwords(str_replace(['_','-'],' ',$product['category']))); ?>
+                </a>
+                <span>/</span>
+                <em><?php echo htmlspecialchars($product['name']); ?></em>
             </div>
-            <div class="thumbs">
-                <div class="thumb active" onclick="changeImg(this,'<?php echo htmlspecialchars($product['image']); ?>')">
-                    <img src="<?php echo htmlspecialchars($product['image']); ?>" alt="">
+        </div>
+    </div>
+
+    <!-- ── Main Body ── -->
+    <div class="det-body">
+        <div class="container">
+            <div class="row g-4">
+
+                <!-- Left: Image Panel -->
+                <div class="col-lg-5 col-md-6">
+                    <div class="img-panel">
+                        <div class="main-img-wrap" id="mainImgWrap">
+                            <?php $img = ltrim($product['image'], '/'); ?>
+                            <img src="<?php echo htmlspecialchars($img); ?>"
+                                 alt="<?php echo htmlspecialchars($product['name']); ?>"
+                                 id="mainImg"
+                                 onerror="this.style.display='none';document.getElementById('imgFallback').style.display='flex'">
+                            <div id="imgFallback" style="display:none;font-size:4rem;color:var(--ink-3)"><i class="fas fa-laptop"></i></div>
+
+                            <?php if ($discount > 0): ?>
+                                <span class="disc-ribbon"><?= $discount ?>% OFF</span>
+                            <?php endif; ?>
+                            <?php if (!$product['in_stock']): ?>
+                                <span class="oos-ribbon">Out of Stock</span>
+                            <?php endif; ?>
+                        </div>
+                        <!-- Thumb row – main image as first thumb; extend if you store multiple images -->
+                        <div class="img-thumbs">
+                            <div class="img-thumb active" onclick="switchImg('<?php echo htmlspecialchars($img); ?>', this)">
+                                <img src="<?php echo htmlspecialchars($img); ?>" alt="thumb">
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- Right: Info Panel -->
+                <div class="col-lg-7 col-md-6">
+                    <div class="info-panel">
+
+                        <div class="det-brand"><?php echo htmlspecialchars($product['brand']); ?></div>
+                        <h1 class="det-name"><?php echo htmlspecialchars($product['name']); ?></h1>
+
+                        <!-- Rating -->
+                        <?php $r = (float)($product['rating'] ?? 0); if ($r > 0): ?>
+                        <div class="det-rating">
+                            <div class="det-stars">
+                                <?php
+                                for ($i = 1; $i <= 5; $i++) {
+                                    if ($i <= floor($r))    echo '<i class="fas fa-star"></i>';
+                                    elseif ($i <= ceil($r)) echo '<i class="fas fa-star-half-alt"></i>';
+                                    else                    echo '<i class="far fa-star"></i>';
+                                }
+                                ?>
+                            </div>
+                            <span class="det-rtxt"><?= number_format($r,1) ?>/5
+                                <?php if ($product['reviews'] ?? 0): ?>
+                                    (<?= number_format($product['reviews']) ?> reviews)
+                                <?php endif; ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+
+                        <!-- Price -->
+                        <div class="det-price-row">
+                            <span class="det-curr">LKR <?php echo number_format($product['price'], 2); ?></span>
+                            <?php if ($discount > 0): ?>
+                                <span class="det-orig">LKR <?php echo number_format($product['original_price'], 2); ?></span>
+                                <span class="det-save">Save LKR <?php echo number_format($product['original_price'] - $product['price'], 2); ?></span>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Stock status -->
+                        <?php if (!$product['in_stock']): ?>
+                            <span class="det-stock st-out"><i class="fas fa-circle-xmark"></i> Out of Stock</span>
+                        <?php elseif ($product['stock_count'] <= 5): ?>
+                            <span class="det-stock st-low"><i class="fas fa-fire"></i> Only <?= $product['stock_count'] ?> left!</span>
+                        <?php else: ?>
+                            <span class="det-stock st-in"><i class="fas fa-circle-check"></i> In Stock
+                                <span style="font-weight:500;color:#047857">&nbsp;(<?= $product['stock_count'] ?> available)</span>
+                            </span>
+                        <?php endif; ?>
+
+                        <!-- Quantity + CTA -->
+                        <?php if ($product['in_stock']): ?>
+                        <div class="qty-row">
+                            <span class="qty-label">Qty:</span>
+                            <div class="qty-ctrl">
+                                <button class="qty-btn" id="qtyMinus" onclick="changeQty(-1)" title="Decrease"><i class="fas fa-minus"></i></button>
+                                <input  class="qty-input" id="qtyInput" type="number" value="1" min="1" max="<?= $product['stock_count'] ?>" readonly>
+                                <button class="qty-btn" id="qtyPlus"  onclick="changeQty(1)"  title="Increase"><i class="fas fa-plus"></i></button>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <div class="det-actions">
+                            <?php if ($product['in_stock']): ?>
+                            <button class="btn-det-cart" id="mainCartBtn"
+                                    onclick="addToCartDetail(<?= $product['id'] ?>)">
+                                <i class="fas fa-cart-plus"></i> Add to Cart
+                            </button>
+                            <?php else: ?>
+                            <button class="btn-det-cart" disabled>
+                                <i class="fas fa-ban"></i> Unavailable
+                            </button>
+                            <?php endif; ?>
+
+                            <button class="btn-det-wish" id="wishBtn"
+                                    onclick="toggleWishlist(<?= $product['id'] ?>, this)"
+                                    title="Add to wishlist">
+                                <i class="far fa-heart"></i>
+                            </button>
+                        </div>
+
+                        <!-- Meta chips -->
+                        <div class="det-meta">
+                            <?php if ($product['category']): ?>
+                            <span class="det-chip">
+                                <i class="fas fa-tag"></i>
+                                <?php echo htmlspecialchars(ucwords(str_replace(['_','-'],' ',$product['category']))); ?>
+                            </span>
+                            <?php endif; ?>
+                            <span class="det-chip"><i class="fas fa-shield-halved"></i> Warranty included</span>
+                            <span class="det-chip"><i class="fas fa-truck-fast"></i> Fast delivery</span>
+                            <span class="det-chip"><i class="fas fa-rotate-left"></i> Easy returns</span>
+                        </div>
+
+                    </div>
+                </div><!-- /col -->
+
+            </div><!-- /row -->
+        </div><!-- /container -->
+    </div><!-- /det-body -->
+
+    <!-- ── Tabs ── -->
+    <div class="det-tabs">
+        <div class="container">
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('specs', this)">Specifications</button>
+                <?php if (!empty($product['description'])): ?>
+                <button class="tab-btn" onclick="switchTab('desc', this)">Description</button>
+                <?php endif; ?>
+                <button class="tab-btn" onclick="switchTab('ship', this)">Shipping & Returns</button>
             </div>
-        </div>
-    </div>
 
-    <!-- Info -->
-    <div class="col-lg-7">
-    <div class="info-card">
-
-        <div class="brand-pill"><i class="fas fa-tag"></i> <?php echo htmlspecialchars($product['brand']); ?></div>
-        <h1 class="prod-name"><?php echo htmlspecialchars($product['name']); ?></h1>
-        <?php if(!empty($product['short_description'])): ?>
-        <p class="short-desc"><?php echo htmlspecialchars($product['short_description']); ?></p>
-        <?php endif; ?>
-
-        <!-- Rating row (links to reviews tab) -->
-        <div class="rating-row">
-            <div class="stars d-flex gap-1">
-                <?php
-                $r = floatval($product['rating']);
-                for($i=1;$i<=5;$i++){
-                    if($i<=floor($r))          echo '<i class="fas fa-star"></i>';
-                    elseif($i<=ceil($r)&&$r>0) echo '<i class="fas fa-star-half-alt"></i>';
-                    else                       echo '<i class="far fa-star"></i>';
-                }
-                ?>
-            </div>
-            <span class="r-num"><?php echo number_format($r,1); ?></span>
-            <a class="r-link" onclick="switchToReviews()" href="#t-rev">
-                <?php echo intval($product['reviews']); ?> reviews
-            </a>
-        </div>
-
-        <!-- Price -->
-        <div class="price-block">
-            <div>
-                <div class="p-now">LKR <?php echo number_format($product['price']); ?></div>
-                <?php if($product['original_price']>$product['price']): ?>
-                <div class="p-was">LKR <?php echo number_format($product['original_price']); ?></div>
+            <!-- Specifications tab -->
+            <div class="tab-panel active" id="tab-specs">
+                <?php if (!empty($specs)): ?>
+                <div class="table-responsive">
+                    <table class="specs-table">
+                        <tbody>
+                        <?php foreach ($specs as $key => $val): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($key); ?></td>
+                                <td><?php echo htmlspecialchars($val); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <!-- Always show brand & category if not already in specs -->
+                        <?php if (!isset($specs['Brand']) && $product['brand']): ?>
+                            <tr><td>Brand</td><td><?php echo htmlspecialchars($product['brand']); ?></td></tr>
+                        <?php endif; ?>
+                        <?php if (!isset($specs['Category']) && $product['category']): ?>
+                            <tr><td>Category</td><td><?php echo htmlspecialchars(ucwords(str_replace(['_','-'],' ',$product['category']))); ?></td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php else: ?>
+                <p style="color:var(--ink-3);font-size:.9rem;">No specifications available for this product.</p>
                 <?php endif; ?>
             </div>
-            <?php if($product['original_price']>$product['price']):
-                $disc=round((($product['original_price']-$product['price'])/$product['original_price'])*100); ?>
-            <span class="save-badge">–<?php echo $disc; ?>% OFF</span>
-            <?php endif; ?>
-        </div>
 
-        <!-- Stock -->
-        <?php if($product['in_stock']&&$product['stock_count']>0): ?>
-            <?php if($product['stock_count']<=5): ?>
-            <div class="chip low"><span class="dot"></span>Only <?php echo $product['stock_count']; ?> left in stock</div>
-            <?php else: ?>
-            <div class="chip ok"><span class="dot"></span>In Stock — <?php echo $product['stock_count']; ?> available</div>
-            <?php endif; ?>
-        <?php else: ?>
-        <div class="chip out"><span class="dot"></span>Out of Stock</div>
-        <?php endif; ?>
-
-        <!-- Warranty -->
-        <div class="warranty-box">
-            <div class="w-icon"><i class="fas fa-shield-alt"></i></div>
-            <div class="w-text">
-                <h6><?php echo htmlspecialchars($product['warranty']); ?></h6>
-                <p><?php echo htmlspecialchars($product['warranty_total']); ?></p>
+            <!-- Description tab -->
+            <?php if (!empty($product['description'])): ?>
+            <div class="tab-panel" id="tab-desc">
+                <div class="det-desc">
+                    <?php echo nl2br(htmlspecialchars($product['description'])); ?>
+                </div>
             </div>
-        </div>
+            <?php endif; ?>
 
-        <!-- Qty + Buttons -->
-        <?php if($product['in_stock']&&$product['stock_count']>0): ?>
-        <div class="qty-row">
-            <span class="qty-label">Quantity</span>
-            <div class="qty-ctrl">
-                <button type="button" onclick="decQty()"><i class="fas fa-minus"></i></button>
-                <input type="number" id="quantity" value="1" min="1" max="<?php echo $product['stock_count']; ?>" readonly>
-                <button type="button" onclick="incQty(<?php echo $product['stock_count']; ?>)"><i class="fas fa-plus"></i></button>
+            <!-- Shipping tab -->
+            <div class="tab-panel" id="tab-ship">
+                <div class="det-desc">
+                    <p><strong>Standard Delivery</strong> – 2–5 working days island-wide. Colombo and suburbs typically within 1–2 days.</p>
+                    <p><strong>Express Delivery</strong> – Available for select areas. Choose at checkout.</p>
+                    <p><strong>Returns Policy</strong> – Products may be returned within 7 days of delivery in original, unopened condition. Contact our support team to initiate a return. Defective items are covered under the manufacturer warranty.</p>
+                    <p><strong>Warranty</strong> – All products carry the manufacturer's standard warranty. Duration varies by brand and product category. Please retain your invoice as proof of purchase.</p>
+                </div>
             </div>
-        </div>
-        <div class="act-row">
-            <button class="btn-cart" onclick="addToCart(<?php echo $product['id']; ?>)"><i class="fas fa-shopping-cart"></i> Add to Cart</button>
-            <button class="btn-buy"  onclick="buyNow(<?php echo $product['id']; ?>)"><i class="fas fa-bolt"></i> Buy Now</button>
-            <button class="btn-wish" onclick="addWish(<?php echo $product['id']; ?>)" title="Wishlist"><i class="far fa-heart"></i></button>
-        </div>
-        <?php else: ?>
-        <div class="act-row">
-            <button class="btn-cart" disabled><i class="fas fa-times"></i> Out of Stock</button>
-            <button class="btn-wish" onclick="addWish(<?php echo $product['id']; ?>)"><i class="far fa-heart"></i></button>
-        </div>
-        <?php endif; ?>
 
-    </div>
-    </div><!-- /col -->
+        </div><!-- /tab-nav -->
+        </div><!-- /container -->
+    </div><!-- /det-tabs -->
 
-</div><!-- /row -->
-
-<!-- ══ TABS ══════════════════════════════════════════════════════ -->
-<div class="tabs-wrap">
-    <ul class="nav tab-pills" id="prodTabs" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#t-specs"><i class="fas fa-list-ul me-1"></i> Specifications</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t-desc"><i class="fas fa-align-left me-1"></i> Description</a></li>
-        <li class="nav-item">
-            <a class="nav-link" id="rev-tab-link" data-bs-toggle="tab" href="#t-rev">
-                <i class="fas fa-star me-1"></i> Reviews
-                <span class="ms-1" id="rev-tab-count">(<?php echo $rev_total; ?>)</span>
-            </a>
-        </li>
-    </ul>
-
-    <div class="tab-content tab-body">
-
-        <!-- Specifications -->
-        <div id="t-specs" class="tab-pane fade show active">
-            <h4>Product Specifications</h4>
-            <?php if(!empty($specs)): ?>
-            <div class="spec-grid">
-                <?php foreach($specs as $k=>$v): ?>
-                <div class="spec-row">
-                    <div class="spec-k"><?php echo htmlspecialchars($k); ?></div>
-                    <div class="spec-v"><?php echo htmlspecialchars($v); ?></div>
+    <!-- ── Related Products ── -->
+    <?php if (!empty($related)): ?>
+    <section class="related-section">
+        <div class="container">
+            <h2 class="section-heading">Related <span>Products</span></h2>
+            <div class="row g-3" id="relatedGrid" style="margin-left:-10px;margin-right:-10px;">
+                <?php foreach ($related as $rel):
+                    $rImg  = ltrim($rel['image'], '/');
+                    $rDisc = ($rel['original_price'] > $rel['price'])
+                        ? round((($rel['original_price'] - $rel['price']) / $rel['original_price']) * 100) : 0;
+                ?>
+                <div class="col-5th">
+                    <div class="product-card <?= !$rel['in_stock']?'oos':'' ?>">
+                        <div class="pc-img">
+                            <img src="<?php echo htmlspecialchars($rImg); ?>"
+                                 alt="<?php echo htmlspecialchars($rel['name']); ?>"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                            <div class="ph" style="display:none"><i class="fas fa-laptop"></i></div>
+                            <?php if ($rDisc > 0): ?><span class="pc-badge disc-b top-r"><?= $rDisc ?>% OFF</span><?php endif; ?>
+                            <?php if (!$rel['in_stock']): ?><span class="pc-badge oos-b top-r">Out of Stock</span><?php endif; ?>
+                        </div>
+                        <div class="pc-info">
+                            <div class="pc-brand"><?php echo htmlspecialchars($rel['brand']); ?></div>
+                            <div class="pc-name"><?php echo htmlspecialchars($rel['name']); ?></div>
+                            <div class="pc-price">
+                                <span class="pc-curr">LKR <?php echo number_format($rel['price'], 2); ?></span>
+                                <?php if ($rDisc > 0): ?><span class="pc-orig">LKR <?php echo number_format($rel['original_price'], 2); ?></span><?php endif; ?>
+                            </div>
+                            <div class="pc-actions">
+                                <a href="product-details.php?id=<?= $rel['id'] ?>" class="btn-view">
+                                    <i class="fas fa-eye" style="font-size:.72rem"></i> View Details
+                                </a>
+                                <?php if ($rel['in_stock']): ?>
+                                <button class="btn-cart" onclick="addToCart(<?= $rel['id'] ?>)"
+                                        data-product-id="<?= $rel['id'] ?>" data-in-stock="true">
+                                    <i class="fas fa-cart-plus" style="font-size:.72rem"></i> Add to Cart
+                                </button>
+                                <?php else: ?>
+                                <button class="btn-cart" disabled>
+                                    <i class="fas fa-ban" style="font-size:.72rem"></i> Unavailable
+                                </button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <?php endforeach; ?>
             </div>
-            <?php else: ?><p class="text-muted">No specifications available.</p><?php endif; ?>
         </div>
+    </section>
+    <?php endif; ?>
 
-        <!-- Description -->
-        <div id="t-desc" class="tab-pane fade">
-            <h4>Product Description</h4>
-            <?php if(!empty($product['description'])): ?>
-            <p style="color:var(--muted);line-height:1.8"><?php echo nl2br(htmlspecialchars($product['description'])); ?></p>
-            <?php else: ?><p class="text-muted">No description available.</p><?php endif; ?>
-        </div>
+</div><!-- /detail-page -->
 
-        <!-- ══ REVIEWS TAB ══════════════════════════════════════ -->
-        <div id="t-rev" class="tab-pane fade">
-            <h4>Customer Reviews</h4>
-
-            <!-- Rating Overview -->
-            <div class="rev-overview">
-                <div class="score-big" id="scoreBig">
-                    <div class="num" id="avgNum"><?php echo $rev_avg > 0 ? number_format($rev_avg,1) : '–'; ?></div>
-                    <div class="big-stars" id="bigStars">
-                        <?php
-                        for($i=1;$i<=5;$i++){
-                            if($i<=floor($rev_avg))           echo '<i class="fas fa-star"></i>';
-                            elseif($i<=ceil($rev_avg)&&$rev_avg>0) echo '<i class="fas fa-star-half-alt"></i>';
-                            else                              echo '<i class="far fa-star"></i>';
-                        }
-                        ?>
-                    </div>
-                    <div class="sub" id="totalSub">
-                        <?php echo $rev_total; ?> review<?php echo $rev_total!=1?'s':''; ?>
-                    </div>
-                </div>
-
-                <div class="bars" id="ratingBars">
-                    <?php
-                    foreach([5,4,3,2,1] as $star):
-                        $cnt = intval($rev_stats['r'.$star] ?? 0);
-                        $pct = $rev_total > 0 ? round($cnt/$rev_total*100) : 0;
-                    ?>
-                    <div class="bar-row">
-                        <span class="bar-lbl"><?php echo $star; ?> <i class="fas fa-star" style="color:#f59e0b;font-size:.7rem"></i></span>
-                        <div class="bar-track"><div class="bar-fill" id="bar<?php echo $star; ?>" style="width:<?php echo $pct; ?>%"></div></div>
-                        <span class="bar-cnt" id="barcnt<?php echo $star; ?>"><?php echo $cnt; ?></span>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-
-            <!-- Sort toolbar -->
-            <div class="rev-toolbar">
-                <span class="sort-label">Sort by:</span>
-                <div class="sort-btns">
-                    <button class="sort-btn active" data-sort="recent">Most Recent</button>
-                    <button class="sort-btn" data-sort="highest">Highest</button>
-                    <button class="sort-btn" data-sort="lowest">Lowest</button>
-                    <button class="sort-btn" data-sort="helpful">Most Helpful</button>
-                </div>
-                <button class="btn-write-rev" id="showFormBtn"
-                    <?php echo $already_reviewed ? 'disabled title="You already reviewed this product"' : ''; ?>
-                    onclick="toggleForm()">
-                    <i class="fas fa-pen me-1"></i>
-                    <?php echo $already_reviewed ? 'Already Reviewed' : 'Write a Review'; ?>
-                </button>
-            </div>
-
-            <!-- Review list -->
-            <div class="rev-list" id="revList">
-                <div class="rev-loading"><i class="fas fa-circle-notch"></i></div>
-            </div>
-
-            <!-- Pagination -->
-            <div class="rev-pagination" id="revPager"></div>
-
-            <!-- Write Review Form -->
-            <?php if(!$already_reviewed): ?>
-            <div class="write-form-wrap" id="writeForm" style="display:none">
-                <h5><i class="fas fa-pen-to-square me-2"></i>Write a Review</h5>
-
-                <div class="form-group" style="text-align:center">
-                    <label>Your Rating <span style="color:#e11d48">*</span></label>
-                    <div class="star-picker" id="starPicker">
-                        <i class="far fa-star" data-r="1"></i>
-                        <i class="far fa-star" data-r="2"></i>
-                        <i class="far fa-star" data-r="3"></i>
-                        <i class="far fa-star" data-r="4"></i>
-                        <i class="far fa-star" data-r="5"></i>
-                    </div>
-                    <div class="star-hint" id="starHint">Click to rate</div>
-                    <input type="hidden" id="fRating" value="0">
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label for="fName">Your Name <span style="color:#e11d48">*</span></label>
-                        <input class="form-inp" type="text" id="fName" placeholder="John Silva" value="<?php echo htmlspecialchars($user_name); ?>">
-                    </div>
-                    <div class="form-group">
-                        <label for="fEmail">Email <span style="color:#e11d48">*</span></label>
-                        <input class="form-inp" type="email" id="fEmail" placeholder="you@email.com" value="<?php echo htmlspecialchars($user_email); ?>">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="fTitle">Review Title <span style="color:#e11d48">*</span></label>
-                    <input class="form-inp" type="text" id="fTitle" placeholder="Summarise your experience…">
-                </div>
-
-                <div class="form-group">
-                    <label for="fBody">Your Review <span style="color:#e11d48">*</span></label>
-                    <textarea class="form-ta" id="fBody" placeholder="What did you love or dislike about this product?"></textarea>
-                </div>
-
-                <div class="submit-row">
-                    <button class="btn-submit-rev" id="submitRevBtn" onclick="submitReview()">
-                        <i class="fas fa-paper-plane me-1"></i> Submit Review
-                    </button>
-                    <span class="form-msg" id="formMsg"></span>
-                </div>
-            </div>
-            <?php else: ?>
-            <div class="already-notice">
-                <i class="fas fa-circle-check"></i>
-                You have already submitted a review for this product. Thank you!
-            </div>
-            <?php endif; ?>
-
-        </div><!-- /t-rev -->
-
-    </div><!-- /tab-body -->
-</div><!-- /tabs-wrap -->
-
-</div><!-- /container -->
-</div><!-- /pd-wrap -->
-
-<!-- WhatsApp FAB -->
-<a href="https://wa.me/94779005652" class="wa-fab" target="_blank" aria-label="WhatsApp">
-    <i class="fab fa-whatsapp"></i>
-</a>
-
-<!-- Toast shelf -->
-<div class="toast-shelf" id="shelf"></div>
-
-<?php include 'footer.php'; ?>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+<?php
+$extra_scripts = <<<'JS'
 <script>
-/* ══════════════════════════════════════════════════════
-   CONFIG
-══════════════════════════════════════════════════════ */
-const PRODUCT_ID = <?php echo intval($product_id); ?>;
-let currentSort = 'recent';
-let currentPage = 1;
-const PER_PAGE  = 5;
-const starLabels = ['','Terrible','Poor','Average','Good','Excellent'];
-
-/* ══════════════════════════════════════════════════════
-   QTY
-══════════════════════════════════════════════════════ */
-function incQty(max){ const e=document.getElementById('quantity'); if(e&&+e.value<max) e.value=+e.value+1; }
-function decQty()    { const e=document.getElementById('quantity'); if(e&&+e.value>1)  e.value=+e.value-1; }
-
-/* ══════════════════════════════════════════════════════
-   IMAGE
-══════════════════════════════════════════════════════ */
-function changeImg(t,s){
-    document.getElementById('mainImg').src=s;
-    document.querySelectorAll('.thumb').forEach(x=>x.classList.remove('active'));
-    t.classList.add('active');
+/* ── Image switcher ── */
+function switchImg(src, thumb) {
+    document.getElementById('mainImg').src = src;
+    document.querySelectorAll('.img-thumb').forEach(t => t.classList.remove('active'));
+    if (thumb) thumb.classList.add('active');
 }
 
-/* ══════════════════════════════════════════════════════
-   TOAST
-══════════════════════════════════════════════════════ */
-function toast(msg, type='ok'){
-    const shelf=document.getElementById('shelf');
-    const el=document.createElement('div');
-    el.className=`toast-item ${type}`;
-    el.innerHTML=`<i class="fas ${type==='ok'?'fa-circle-check':'fa-circle-exclamation'} t-icon"></i><span>${msg}</span>`;
-    shelf.appendChild(el);
-    setTimeout(()=>{ el.style.animation='tOut .3s ease-in forwards'; setTimeout(()=>el.remove(),300); },3500);
+/* ── Tab switcher ── */
+function switchTab(name, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    const panel = document.getElementById('tab-' + name);
+    if (panel) panel.classList.add('active');
+    if (btn)   btn.classList.add('active');
 }
 
-/* ══════════════════════════════════════════════════════
-   CART / WISHLIST
-══════════════════════════════════════════════════════ */
-function addToCart(id){
-    const qty=+(document.getElementById('quantity')?.value??1);
-    const btn=event.target.closest('button');
-    const orig=btn.innerHTML;
-    btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Adding…';btn.disabled=true;
-    fetch('add-to-cart.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:id,quantity:qty})})
-    .then(r=>r.json()).then(d=>{
-        if(d.success){ btn.innerHTML='<i class="fas fa-check"></i> Added!'; toast('Added to cart!'); updateCart(d.cart_count,d.cart_total); setTimeout(()=>{btn.innerHTML=orig;btn.disabled=false},2000); }
-        else{ if(d.redirect){toast('Please login first','err');setTimeout(()=>location.href=d.redirect,1500);return;} toast(d.message||'Error','err'); btn.innerHTML=orig;btn.disabled=false; }
-    }).catch(()=>{ toast('Network error','err'); btn.innerHTML=orig;btn.disabled=false; });
+/* ── Quantity control ── */
+function changeQty(delta) {
+    const input = document.getElementById('qtyInput');
+    if (!input) return;
+    const max = parseInt(input.max) || 999;
+    let val = parseInt(input.value) + delta;
+    val = Math.max(1, Math.min(val, max));
+    input.value = val;
+    document.getElementById('qtyMinus').disabled = (val <= 1);
+    document.getElementById('qtyPlus').disabled  = (val >= max);
 }
 
-function buyNow(id){
-    const qty=+(document.getElementById('quantity')?.value??1);
-    fetch('add-to-cart.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:id,quantity:qty})})
-    .then(r=>r.json()).then(d=>{ if(d.success) location.href='checkout.php'; else{ if(d.redirect){toast('Please login','err');setTimeout(()=>location.href=d.redirect,1500);}else toast(d.message||'Error','err'); } })
-    .catch(()=>toast('Network error','err'));
-}
+/* ── Add to cart (detail page, respects qty) ── */
+function addToCartDetail(productId) {
+    const btn = document.getElementById('mainCartBtn');
+    const qty = parseInt(document.getElementById('qtyInput')?.value) || 1;
+    if (!btn || btn.disabled) return;
 
-function addWish(id){
-    const btn=event.target.closest('button');
-    fetch('add-to-wishlist.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:id})})
-    .then(r=>r.json()).then(d=>{ if(d.success){btn.querySelector('i')?.classList.replace('far','fas');btn.style.color='#f43f5e';btn.style.borderColor='#f43f5e';toast('Added to wishlist!');}else{if(d.redirect){toast('Please login first','err');setTimeout(()=>location.href=d.redirect,1500);}else toast(d.message||'Error','err');} })
-    .catch(()=>toast('Network error','err'));
-}
+    const orig   = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding…';
+    btn.disabled  = true;
 
-function updateCart(cnt,total){
-    const b=document.querySelector('.cart-count'),ic=document.querySelector('.cart-icon');
-    if(cnt>0){ if(b) b.textContent=cnt; else if(ic){const nb=document.createElement('span');nb.className='cart-count';nb.textContent=cnt;ic.appendChild(nb);} }
-    document.querySelectorAll('.me-3').forEach(el=>{ if(el.textContent.includes('LKR')) el.textContent='LKR '+new Intl.NumberFormat().format(total); });
-}
-
-/* ══════════════════════════════════════════════════════
-   TAB switch helper
-══════════════════════════════════════════════════════ */
-function switchToReviews(){
-    const link=document.getElementById('rev-tab-link');
-    if(link) bootstrap.Tab.getOrCreateInstance(link).show();
-}
-
-/* ══════════════════════════════════════════════════════
-   REVIEW SYSTEM
-══════════════════════════════════════════════════════ */
-
-/* ── Load & render reviews ── */
-function loadReviews(page=1, sort='recent'){
-    currentPage=page; currentSort=sort;
-    const list=document.getElementById('revList');
-    list.innerHTML='<div class="rev-loading"><i class="fas fa-circle-notch"></i></div>';
-
-    fetch(`get-reviews.php?product_id=${PRODUCT_ID}&page=${page}&per_page=${PER_PAGE}&sort=${sort}`)
-    .then(r=>r.json()).then(d=>{
-        if(!d.success){ list.innerHTML='<p class="text-muted">Could not load reviews.</p>'; return; }
-
-        // update overview numbers
-        updateOverview(d.avg_rating, d.total, d.breakdown);
-
-        list.innerHTML='';
-        if(!d.reviews.length){
-            list.innerHTML=`
-                <div class="rev-empty-state">
-                    <div class="empty-icon-wrap"><i class="fas fa-star"></i></div>
-                    <h5>No reviews yet</h5>
-                    <p>Be the first to share your experience with this product.</p>
-                </div>`;
-            document.getElementById('revPager').innerHTML='';
-            return;
-        }
-
-        d.reviews.forEach((rv, idx) => {
-            const card = buildCard(rv, idx);
-            list.appendChild(card);
-        });
-
-        buildPager(d.page, d.pages);
+    fetch('add-to-cart.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId, quantity: qty })
     })
-    .catch(()=>{ list.innerHTML='<p class="text-muted">Failed to load reviews.</p>'; });
-}
-
-/* ── Build one review card ── */
-function buildCard(rv, idx){
-    const card = document.createElement('div');
-    card.className = 'rev-card';
-    card.style.animationDelay = (idx*0.07)+'s';
-
-    // stars html
-    let starsHtml='';
-    for(let i=1;i<=5;i++) starsHtml+=`<i class="fas fa-star${i>rv.rating?' e':''}"></i>`;
-
-    // rating badge colour class
-    const badgeCls = rv.rating>=4?'rb-4 rb-5':rv.rating===3?'rb-3':'rb-2 rb-1';
-
-    const votedKey = 'hv_'+rv.id;
-    const alreadyVoted = localStorage.getItem(votedKey);
-
-    card.innerHTML=`
-        <div class="rev-head">
-            <div class="avatar">${rv.initials}</div>
-            <div class="rev-meta">
-                <div class="rev-name-row">
-                    <span class="rev-name">${rv.name}</span>
-                    ${rv.verified?'<span class="v-badge"><i class="fas fa-circle-check"></i> Verified Purchase</span>':''}
-                    <span class="rev-date">${rv.created_at}</span>
-                </div>
-                <div class="rev-stars-row">${starsHtml}</div>
-            </div>
-            <div class="rev-rating-badge rb-${rv.rating}">${rv.rating}</div>
-        </div>
-        <div class="rev-title">${rv.title}</div>
-        <div class="rev-body">${rv.body}</div>
-        <div class="rev-foot">
-            <div class="helpful-row">
-                <span class="helpful-lbl">Helpful?</span>
-                <button class="btn-helpful${alreadyVoted?' voted':''}" id="hbtn_${rv.id}" onclick="markHelpful(${rv.id})" ${alreadyVoted?'disabled':''}>
-                    <i class="fas fa-thumbs-up"></i>
-                    <span id="hcnt_${rv.id}">${rv.helpful}</span>
-                </button>
-            </div>
-        </div>`;
-    return card;
-}
-
-/* ── Pagination ── */
-function buildPager(page, pages){
-    const pager=document.getElementById('revPager');
-    if(pages<=1){ pager.innerHTML=''; return; }
-    let html='';
-    html+=`<button class="pg-btn" onclick="loadReviews(${page-1},'${currentSort}')" ${page===1?'disabled':''}><i class="fas fa-chevron-left"></i></button>`;
-    for(let p=1;p<=pages;p++)
-        html+=`<button class="pg-btn${p===page?' active':''}" onclick="loadReviews(${p},'${currentSort}')">${p}</button>`;
-    html+=`<button class="pg-btn" onclick="loadReviews(${page+1},'${currentSort}')" ${page===pages?'disabled':''}><i class="fas fa-chevron-right"></i></button>`;
-    pager.innerHTML=html;
-}
-
-/* ── Update overview block ── */
-function updateOverview(avg, total, breakdown){
-    // avg number
-    document.getElementById('avgNum').textContent = avg>0 ? avg.toFixed(1) : '–';
-    document.getElementById('totalSub').textContent = total+' review'+(total!==1?'s':'');
-
-    // big stars
-    let sh='';
-    for(let i=1;i<=5;i++){
-        if(i<=Math.floor(avg))        sh+='<i class="fas fa-star"></i>';
-        else if(i<=Math.ceil(avg)&&avg>0) sh+='<i class="fas fa-star-half-alt"></i>';
-        else                           sh+='<i class="far fa-star"></i>';
-    }
-    document.getElementById('bigStars').innerHTML=sh;
-
-    // bar fills
-    [5,4,3,2,1].forEach(s=>{
-        const cnt=breakdown[s]||0;
-        const pct=total>0?Math.round(cnt/total*100):0;
-        const bf=document.getElementById('bar'+s);
-        const bc=document.getElementById('barcnt'+s);
-        if(bf) bf.style.width=pct+'%';
-        if(bc) bc.textContent=cnt;
-    });
-
-    // tab count
-    document.getElementById('rev-tab-count').textContent='('+total+')';
-}
-
-/* ── Sort buttons ── */
-document.querySelectorAll('.sort-btn').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-        document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));
-        btn.classList.add('active');
-        loadReviews(1, btn.dataset.sort);
-    });
-});
-
-/* ── Mark helpful ── */
-function markHelpful(id){
-    fetch('review-helpful.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({review_id:id})})
-    .then(r=>r.json()).then(d=>{
-        if(d.success){
-            document.getElementById('hcnt_'+id).textContent=d.helpful;
-            const btn=document.getElementById('hbtn_'+id);
-            btn.classList.add('voted'); btn.disabled=true;
-            localStorage.setItem('hv_'+id,'1');
-            toast('Thanks for your feedback!');
-        } else toast(d.message||'Already voted','err');
-    }).catch(()=>toast('Network error','err'));
-}
-
-/* ── Toggle form ── */
-function toggleForm(){
-    const f=document.getElementById('writeForm');
-    if(!f) return;
-    const showing=f.style.display!=='none';
-    f.style.display=showing?'none':'block';
-    if(!showing) f.scrollIntoView({behavior:'smooth',block:'nearest'});
-}
-
-/* ── Star picker ── */
-let selectedRating=0;
-const starHints=['','Terrible 😣','Poor 😕','Average 😐','Good 😊','Excellent 🤩'];
-
-document.querySelectorAll('#starPicker i').forEach(s=>{
-    s.addEventListener('click',()=>{
-        selectedRating=+s.dataset.r;
-        document.getElementById('fRating').value=selectedRating;
-        paintStars(selectedRating);
-        document.getElementById('starHint').textContent=starHints[selectedRating];
-    });
-    s.addEventListener('mouseenter',()=>paintStars(+s.dataset.r));
-    s.addEventListener('mouseleave',()=>paintStars(selectedRating));
-});
-
-function paintStars(n){
-    document.querySelectorAll('#starPicker i').forEach(s=>{
-        const on=+s.dataset.r<=n;
-        s.classList.toggle('fas',on); s.classList.toggle('far',!on); s.classList.toggle('on',on);
-    });
-}
-
-/* ── Submit review ── */
-function submitReview(){
-    const rating = +document.getElementById('fRating').value;
-    const name   = document.getElementById('fName').value.trim();
-    const email  = document.getElementById('fEmail').value.trim();
-    const title  = document.getElementById('fTitle').value.trim();
-    const body   = document.getElementById('fBody').value.trim();
-    const msg    = document.getElementById('formMsg');
-    const btn    = document.getElementById('submitRevBtn');
-
-    // Validate
-    if(!rating)         { showMsg('Please select a star rating.','err'); return; }
-    if(!name)           { showMsg('Please enter your name.','err'); return; }
-    if(!isEmail(email)) { showMsg('Please enter a valid email.','err'); return; }
-    if(title.length<3)  { showMsg('Title is too short.','err'); return; }
-    if(body.length<10)  { showMsg('Review is too short (min 10 chars).','err'); return; }
-
-    btn.disabled=true;
-    btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i> Submitting…';
-
-    fetch('submit-review.php',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({product_id:PRODUCT_ID, rating, name, email, title, body})
-    })
-    .then(r=>r.json()).then(d=>{
-        if(d.success){
-            showMsg('✓ '+d.message,'ok');
-            toast('Review submitted! Thank you 🎉');
-
-            // update overview live
-            updateOverview(d.avg_rating, d.total, calcBreakdown());
-            document.getElementById('rev-tab-count').textContent='('+d.total+')';
-
-            // hide form, reload list
-            setTimeout(()=>{
-                document.getElementById('writeForm').style.display='none';
-                document.getElementById('showFormBtn').disabled=true;
-                document.getElementById('showFormBtn').textContent='Already Reviewed';
-                loadReviews(1,'recent');
-            },1200);
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            btn.innerHTML = '<i class="fas fa-check"></i> Added!';
+            btn.style.background = '#038703';
+            updateCartUI(data.cart_count, data.cart_total);
+            showToast(data.message || 'Added to cart!', 's');
+            setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.disabled = false; }, 2200);
         } else {
-            showMsg(d.message||'Something went wrong.','err');
-            btn.disabled=false;
-            btn.innerHTML='<i class="fas fa-paper-plane me-1"></i> Submit Review';
+            if (data.redirect) {
+                showToast('Please log in to add items to your cart', 'e');
+                setTimeout(() => window.location.href = data.redirect, 1600);
+                return;
+            }
+            showToast(data.message || 'Could not add to cart', 'e');
+            btn.innerHTML = orig; btn.disabled = false;
         }
     })
-    .catch(()=>{ showMsg('Network error. Try again.','err'); btn.disabled=false; btn.innerHTML='<i class="fas fa-paper-plane me-1"></i> Submit Review'; });
+    .catch(() => {
+        showToast('Network error – please try again', 'e');
+        btn.innerHTML = orig; btn.disabled = false;
+    });
 }
 
-function showMsg(txt, type){
-    const m=document.getElementById('formMsg');
-    m.textContent=txt; m.className='form-msg '+type;
-    setTimeout(()=>{ m.textContent=''; m.className='form-msg'; },5000);
+/* ── Add to cart (related cards) ── */
+function addToCart(productId) {
+    const btn = document.querySelector(`[data-product-id="${productId}"]`);
+    if (!btn || btn.disabled) return;
+
+    const orig   = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:.72rem"></i> Adding…';
+    btn.disabled  = true;
+
+    fetch('add-to-cart.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId, quantity: 1 })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            btn.innerHTML = '<i class="fas fa-check" style="font-size:.72rem"></i> Added!';
+            btn.style.background = '#059669';
+            updateCartUI(data.cart_count, data.cart_total);
+            showToast(data.message || 'Added to cart!', 's');
+            setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.disabled = false; }, 2200);
+        } else {
+            if (data.redirect) {
+                showToast('Please log in to add items to your cart', 'e');
+                setTimeout(() => window.location.href = data.redirect, 1600);
+                return;
+            }
+            showToast(data.message || 'Could not add to cart', 'e');
+            btn.innerHTML = orig; btn.disabled = false;
+        }
+    })
+    .catch(() => {
+        showToast('Network error – please try again', 'e');
+        btn.innerHTML = orig; btn.disabled = false;
+    });
 }
 
-function isEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+/* ── Wishlist toggle (UI only – wire up your own endpoint) ── */
+function toggleWishlist(productId, btn) {
+    const active = btn.classList.toggle('active');
+    btn.innerHTML = active ? '<i class="fas fa-heart"></i>' : '<i class="far fa-heart"></i>';
+    showToast(active ? 'Added to wishlist' : 'Removed from wishlist', active ? 's' : 'i');
+}
 
-// rough breakdown re-calc (server sends correct on reload)
-function calcBreakdown(){ return {5:0,4:0,3:0,2:0,1:0}; }
+/* ── Cart UI updater ── */
+function updateCartUI(count, total) {
+    let badge = document.querySelector('.bdot');
+    const icon  = document.querySelector('.icon-btn');
+    if (count > 0) {
+        if (badge) badge.textContent = count;
+        else if (icon) { const b = document.createElement('span'); b.className = 'bdot'; b.textContent = count; icon.appendChild(b); }
+    } else if (badge) badge.remove();
+    document.querySelectorAll('.cart-total').forEach(el => {
+        if (total !== undefined) el.textContent = 'LKR ' + new Intl.NumberFormat().format(total);
+    });
+}
 
-/* ── Load reviews when tab shown ── */
-document.getElementById('rev-tab-link').addEventListener('shown.bs.tab',()=>{
-    loadReviews(1,'recent');
-});
+/* ── Toast ── */
+function showToast(msg, type = 'i') {
+    document.querySelectorAll('.it-toast').forEach(t => t.remove());
+    const icons = { s:'circle-check', e:'circle-exclamation', i:'circle-info' };
+    const el = document.createElement('div');
+    el.className = 'it-toast';
+    el.innerHTML = `
+        <div class="t-icon ${type}"><i class="fas fa-${icons[type]||'circle-info'}"></i></div>
+        <div class="t-body">${msg}</div>
+        <button class="t-close" aria-label="Close"><i class="fas fa-xmark"></i></button>`;
+    document.body.appendChild(el);
+    const tid = setTimeout(() => el.remove(), 4000);
+    el.querySelector('.t-close').addEventListener('click', () => { clearTimeout(tid); el.remove(); });
+}
 
-/* ── If page loaded directly with #reviews hash ── */
-document.addEventListener('DOMContentLoaded',()=>{
-    if(location.hash==='#t-rev') switchToReviews();
+/* ── Scroll reveal for related cards ── */
+document.addEventListener('DOMContentLoaded', () => {
+    const io = new IntersectionObserver(entries => {
+        entries.forEach((e, i) => {
+            if (e.isIntersecting) {
+                setTimeout(() => e.target.classList.add('visible'), i * 60);
+                io.unobserve(e.target);
+            }
+        });
+    }, { threshold: 0.05, rootMargin:'0px 0px -40px 0px' });
+    document.querySelectorAll('#relatedGrid .product-card').forEach(c => io.observe(c));
+
+    /* init qty button states */
+    changeQty(0);
+
+    /* update browser tab title with real product name */
+    const detName = document.querySelector(".det-name");
+    if (detName) document.title = detName.textContent.trim() + " – IT Shop.LK";
 });
 </script>
-</body>
-</html>
+JS;
+
+include 'footer.php';
+?>

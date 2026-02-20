@@ -379,7 +379,7 @@ function buildQueryString($p) { $q = $_GET; $q['page'] = $p; return http_build_q
         box-shadow:0 4px 16px rgba(79,70,229,.38);
     }
     .btn-cart:disabled {
-        background:var(--surface); color:var(--ink-3);
+        background:var(--surface); color: #fff;
         box-shadow:none; cursor:not-allowed;
         border:1px solid rgba(0,0,0,.08);
     }
@@ -738,7 +738,7 @@ function addToCart(productId) {
     .then(data => {
         if (data.success) {
             btn.innerHTML = '<i class="fas fa-check" style="font-size:.72rem"></i> Added!';
-            btn.style.background = '#059669';
+            btn.style.background = '#008716';
             updateCartUI(data.cart_count, data.cart_total);
             showToast(data.message || 'Added to cart!', 's');
             setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.disabled = false; }, 2200);

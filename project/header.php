@@ -359,8 +359,9 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
                 <?php if (isset($_SESSION['user_id'])): ?>
                     <div class="dropdown">
                         <button class="btn-account dropdown-toggle" type="button"
-                                data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="av">U</span> Account
+                            data-bs-toggle="dropdown" aria-expanded="false">
+                           <span class="av"><?= htmlspecialchars(strtoupper(mb_substr($_SESSION['user_name'] ?? 'U', 0, 1))) ?></span>
+                           <?= htmlspecialchars($_SESSION['user_name'] ?? '') ?>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li><a class="dropdown-item" href="profile.php">

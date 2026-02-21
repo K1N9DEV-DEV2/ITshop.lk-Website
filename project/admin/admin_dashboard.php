@@ -517,7 +517,7 @@ $nav_items = [
                 <i class="fas fa-bell"></i>
                 <?php if ($pending_count>0||($agg['out_of_stock']>0)): ?><span class="notif-dot"></span><?php endif; ?>
             </span>
-            <a href="index.php" class="tb-btn" title="View Store" target="_blank"><i class="fas fa-arrow-up-right-from-square"></i></a>
+            <a href="../index.php" class="tb-btn" title="View Store" target="_blank"><i class="fas fa-arrow-up-right-from-square"></i></a>
         </div>
     </header>
 

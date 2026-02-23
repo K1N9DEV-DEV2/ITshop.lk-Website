@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $body    = "Name: {$name}\nEmail: {$email}\nPhone: {$phone}\nSubject: {$subject}\n\nMessage:\n{$message}";
 
         if (mail($to, "IT Shop Contact: {$subject}", $body, $headers)) {
-            $success_msg = 'Message sent! We\'ll get back to you within 24 hours. You can also reach us directly via <a href="https://webmail.itshop.lk" target="_blank" style="color:#065f46;font-weight:700;text-decoration:underline;">our webmail</a>.';
+            $success_msg = 'Message sent! We\'ll get back to you within 24 hours.';
         } else {
             $error_msg = 'Sorry, something went wrong. Please try WhatsApp or call us directly.';
         }
@@ -341,7 +341,6 @@ include 'header.php';
     }
     .alert-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
     .alert-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .alert-success a { color: #065f46; }
 
     /* ── WHATSAPP FAB ───────────────────────────────────────── */
     .wa-btn {
@@ -479,6 +478,7 @@ include 'header.php';
         </div>
 
         <!-- Embedded Google Map — replace src with your actual embed URL -->
+         
 
     </div><!-- /info-panel -->
 
@@ -488,7 +488,7 @@ include 'header.php';
         <p class="form-sub">Fill out the form and our team will contact you as soon as possible.</p>
 
         <?php if ($success_msg): ?>
-            <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo $success_msg; ?></div>
+            <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success_msg); ?></div>
         <?php elseif ($error_msg): ?>
             <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error_msg); ?></div>
         <?php endif; ?>

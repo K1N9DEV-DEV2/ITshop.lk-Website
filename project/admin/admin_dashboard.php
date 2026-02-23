@@ -58,20 +58,17 @@ function slugify(string $text): string {
 }
 
 // ── Ensure categories table has the right columns ─────────────────────────────
-// Adds icon column if missing (safe to run every load; MySQL ignores if exists)
 if ($pdo) {
     try {
         $pdo->exec("ALTER TABLE categories ADD COLUMN IF NOT EXISTS slug VARCHAR(100) NOT NULL DEFAULT ''");
         $pdo->exec("ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon VARCHAR(50) NOT NULL DEFAULT 'fa-tag'");
-        // Back-fill slugs for any rows that don't have one
         $pdo->exec("UPDATE categories SET slug = LOWER(REPLACE(REPLACE(name,' ','_'),'&','')) WHERE slug = '' OR slug IS NULL");
-    } catch (PDOException $e) { /* silently skip if unsupported */ }
+    } catch (PDOException $e) { /* silently skip */ }
 }
 
-// ── Load categories from DB (primary source of truth) ────────────────────────
+// ── Load categories from DB ───────────────────────────────────────────────────
 $db_categories = dbq("SELECT * FROM categories ORDER BY name ASC") ?: [];
 
-// Build a lookup map: slug → category row  (fallback uses name as slug)
 $cat_map = [];
 foreach ($db_categories as $cat) {
     $slug = $cat['slug'] ?: slugify($cat['name']);
@@ -89,7 +86,7 @@ $db_products = dbq(
     "SELECT p.id, p.name, p.category, p.price, p.original_price,
             p.image, p.brand, p.stock_count,
             CASE WHEN p.stock_count > 0 THEN 1 ELSE 0 END as in_stock,
-            GROUP_CONCAT(ps.spec_name SEPARATOR ' · ') as specs
+            GROUP_CONCAT(ps.spec_name SEPARATOR '\n') as specs
      FROM products p
      LEFT JOIN product_specs ps ON p.id = ps.product_id
      GROUP BY p.id
@@ -105,7 +102,6 @@ $agg = dbq(
     [], false
 ) ?: ['total_products'=>0,'total_stock'=>0,'out_of_stock'=>0,'low_stock'=>0];
 
-// Category counts joined from DB categories (left join so we see categories with 0 products too)
 $cat_counts = dbq(
     "SELECT c.id, c.name, c.slug, c.icon,
             COUNT(p.id) as cnt,
@@ -116,7 +112,6 @@ $cat_counts = dbq(
      ORDER BY cnt DESC, c.name ASC"
 ) ?: [];
 
-// Also detect any products whose category slug has no matching categories row
 $orphan_cats = dbq(
     "SELECT p.category, COUNT(*) as cnt, COALESCE(SUM(p.stock_count),0) as stock
      FROM products p
@@ -191,7 +186,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     "UPDATE categories SET name=?, description=?, slug=?, icon=?, updated_at=NOW() WHERE id=?"
                 )->execute([$cat_name, $cat_desc, $cat_slug, $cat_icon, $cid]);
 
-                // Migrate products if slug changed
                 if ($old_slug && $old_slug !== $cat_slug) {
                     $pdo->prepare("UPDATE products SET category=? WHERE category=?")->execute([$cat_slug, $old_slug]);
                 }
@@ -214,10 +208,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         if ($cid) {
             try {
                 if ($reassign) {
-                    // Move products to another category
                     $pdo->prepare("UPDATE products SET category=? WHERE category=?")->execute([$reassign, $cat_slug]);
                 } else {
-                    // Null-out the category on orphaned products
                     $pdo->prepare("UPDATE products SET category='' WHERE category=?")->execute([$cat_slug]);
                 }
                 $pdo->prepare("DELETE FROM categories WHERE id=?")->execute([$cid]);
@@ -232,7 +224,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
     }
 
     // ── IMPORT ORPHAN CATEGORIES ──────────────────────────────────────────────
-    // Creates a categories row for any product category slug that has no match
     if ($act === 'import_orphans') {
         $imported = 0;
         $orphans  = dbq(
@@ -305,6 +296,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
+    // ── EDIT PRODUCT ──────────────────────────────────────────────────────────
+    if ($act === 'edit_product') {
+        $pid      = intval($_POST['product_id'] ?? 0);
+        $name     = trim($_POST['name'] ?? '');
+        $brand    = trim($_POST['brand'] ?? '');
+        $category = trim($_POST['category'] ?? '');
+        $price    = floatval($_POST['price'] ?? 0);
+        $orig     = floatval($_POST['original_price'] ?? 0);
+        $stock    = intval($_POST['stock_count'] ?? 0);
+        $image    = trim($_POST['image_url'] ?? '');
+
+        // Handle new file upload
+        if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
+            $ext     = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
+            $allowed = ['jpg','jpeg','png','webp','gif'];
+            if (in_array($ext, $allowed)) {
+                $dir = 'uploads/products/';
+                if (!is_dir($dir)) mkdir($dir, 0755, true);
+                $fname = uniqid('prod_') . '.' . $ext;
+                if (move_uploaded_file($_FILES['image_file']['tmp_name'], $dir . $fname))
+                    $image = $dir . $fname;
+            }
+        }
+        // If no new image provided, keep existing
+        if (!$image) $image = trim($_POST['existing_image'] ?? '');
+
+        if ($pid && $name && $category && $price > 0) {
+            try {
+                $pdo->prepare(
+                    "UPDATE products SET name=?, brand=?, category=?, price=?, original_price=?, stock_count=?, image=? WHERE id=?"
+                )->execute([$name, $brand, $category, $price, $orig ?: $price, $stock, $image, $pid]);
+
+                // Replace specs: delete old, insert new
+                $specs_raw = trim($_POST['specs'] ?? '');
+                $pdo->prepare("DELETE FROM product_specs WHERE product_id=?")->execute([$pid]);
+                if ($specs_raw) {
+                    $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name) VALUES (?, ?)");
+                    foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl)
+                        $sp->execute([$pid, $sl]);
+                }
+                $flash = ['type' => 'success', 'msg' => "Product \"$name\" updated successfully!"];
+            } catch (PDOException $e) {
+                $flash = ['type' => 'error', 'msg' => 'DB error: ' . $e->getMessage()];
+            }
+        } else {
+            $flash = ['type' => 'error', 'msg' => 'Name, category and price are required.'];
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=products');
+        exit;
+    }
+
     // ── DELETE PRODUCT ────────────────────────────────────────────────────────
     if ($act === 'delete_product') {
         $del_id = intval($_POST['product_id'] ?? 0);
@@ -347,7 +390,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // ── CLEAR ALL ORDERS — superadmin only ───────────────────────────────────
+    // ── CLEAR ALL ORDERS — superadmin only ────────────────────────────────────
     if ($act === 'clear_orders' && $is_superadmin) {
         try {
             $pdo->exec("DELETE FROM orders");
@@ -513,7 +556,7 @@ $icon_options = [
         .sl { background:#fef9c3; color:#854d0e; }
         .so { background:#fee2e2; color:#dc2626; }
         .si { background:#f3f4f6; color:#6b7280; }
-        .sw { background:#fef3c7; color:#92400e; } /* warning/orphan */
+        .sw { background:#fef3c7; color:#92400e; }
 
         /* ── ACTION BTNS ─────────────────────────────────────── */
         .ab { width:28px; height:28px; border-radius:7px; border:1px solid rgba(10,10,15,.08); background:var(--surface); color:var(--ink-muted); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:.74rem; transition:all .14s; text-decoration:none; }
@@ -860,7 +903,7 @@ $icon_options = [
 
         <div class="tc">
             <div class="tc-hdr">
-                <div><h3>Product Inventory</h3><p>Edit stock inline · press Enter or ✓ to save</p></div>
+                <div><h3>Product Inventory</h3><p>Edit stock inline · click <i class="fas fa-pen" style="font-size:.7rem"></i> to edit full product</p></div>
                 <input type="text" class="tbl-s" placeholder="Search products…" id="prodSearch" style="width:185px">
             </div>
             <div class="tbl-wrap">
@@ -875,6 +918,18 @@ $icon_options = [
                     $slbl=$stk===0?'Out of Stock':($stk<=5?'Low Stock':'Active');
                     $cat_label=$cat_map[$p['category']]['label'] ?? ucfirst($p['category']);
                     $is_orphan = $p['category'] && !isset($cat_map[$p['category']]);
+                    // Build JSON data for edit modal (specs already loaded via GROUP_CONCAT with \n separator)
+                    $edit_data = [
+                        'id'             => (int)$p['id'],
+                        'name'           => $p['name'],
+                        'brand'          => $p['brand'] ?? '',
+                        'category'       => $p['category'],
+                        'price'          => $p['price'],
+                        'original_price' => $p['original_price'] ?? '',
+                        'stock_count'    => $stk,
+                        'image'          => $p['image'] ?? '',
+                        'specs'          => $p['specs'] ?? '',
+                    ];
                 ?>
                 <tr data-cat="<?= htmlspecialchars($p['category']) ?>">
                     <td class="muted"><?= $p['id'] ?></td>
@@ -888,7 +943,7 @@ $icon_options = [
                     <td>
                         <strong><?= htmlspecialchars($p['name']) ?></strong>
                         <?php if ($p['specs']): ?>
-                        <div style="font-size:.68rem;color:var(--ink-muted);margin-top:2px;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($p['specs']) ?></div>
+                        <div style="font-size:.68rem;color:var(--ink-muted);margin-top:2px;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars(str_replace("\n", ' · ', $p['specs'])) ?></div>
                         <?php endif; ?>
                     </td>
                     <td><?= htmlspecialchars($p['brand']??'—') ?></td>
@@ -912,6 +967,10 @@ $icon_options = [
                     <td>
                         <div style="display:flex;gap:4px">
                             <a href="../product-details.php?id=<?= $p['id'] ?>" class="ab" target="_blank" title="View on site"><i class="fas fa-eye"></i></a>
+                            <button type="button" class="ab edit" title="Edit product"
+                                onclick="openEditProduct(<?= htmlspecialchars(json_encode($edit_data), ENT_QUOTES) ?>)">
+                                <i class="fas fa-pen"></i>
+                            </button>
                             <form method="POST" style="display:inline" onsubmit="return confirm('Delete product #<?= $p['id'] ?> — <?= addslashes(htmlspecialchars($p['name'])) ?>?\nThis also removes its specs.')">
                                 <input type="hidden" name="_action" value="delete_product">
                                 <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
@@ -1067,11 +1126,9 @@ $icon_options = [
         <div class="db-warn"><i class="fas fa-layer-group"></i> No categories yet. Add your first category to get started. Categories are used as dropdown options when adding products.</div>
         <?php endif; ?>
 
-        <!-- Category Cards -->
         <div class="cg">
             <?php foreach ($db_categories as $i=>$cat):
                 $sl = $cat['slug'] ?: slugify($cat['name']);
-                // Find cnt for this category
                 $cat_cnt = 0; $cat_stock = 0;
                 foreach ($cat_counts as $cc) { if ($cc['id']==$cat['id']) { $cat_cnt=$cc['cnt']; $cat_stock=$cc['stock']; break; } }
             ?>
@@ -1095,7 +1152,6 @@ $icon_options = [
             <?php endforeach; ?>
         </div>
 
-        <!-- Category Table -->
         <div class="tc" style="margin-top:1.35rem">
             <div class="tc-hdr">
                 <div><h3>All Categories</h3><p>Stored in <code style="background:var(--surface);padding:1px 5px;border-radius:4px">categories</code> table · slug maps to <code style="background:var(--surface);padding:1px 5px;border-radius:4px">products.category</code></p></div>
@@ -1421,6 +1477,97 @@ $icon_options = [
 
 
 <!-- ══════════════════════════════════════════════════════════════ -->
+<!-- EDIT PRODUCT MODAL                                            -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="m-overlay" id="editProductModal">
+    <div class="modal">
+        <div class="m-hdr">
+            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Product</h3>
+            <button class="m-close" onclick="closeModal('editProductModal')"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form method="POST" enctype="multipart/form-data" action="?page=products">
+            <input type="hidden" name="_action"        value="edit_product">
+            <input type="hidden" name="product_id"     id="editProdId">
+            <input type="hidden" name="existing_image" id="editProdExistingImage">
+            <div class="m-body">
+
+                <div class="fg">
+                    <label>Product Image</label>
+                    <div class="img-prev" id="editImgPrev">
+                        <div class="iph" id="editImgPh"><i class="fas fa-image"></i></div>
+                        <img id="editImgPrevImg" src="" style="display:none">
+                    </div>
+                    <div class="f-row">
+                        <div>
+                            <input type="file" name="image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFileEdit(this)">
+                            <div class="f-hint">Upload to replace current image</div>
+                        </div>
+                        <div>
+                            <input type="text" name="image_url" id="editProdImageUrl" class="fc"
+                                   placeholder="…or paste image/path URL"
+                                   oninput="prvUrlEdit(this.value)">
+                            <div class="f-hint">Leave blank to keep existing</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="f-row">
+                    <div class="fg">
+                        <label>Product Name <span>*</span></label>
+                        <input type="text" name="name" id="editProdName" class="fc" required>
+                    </div>
+                    <div class="fg">
+                        <label>Brand</label>
+                        <input type="text" name="brand" id="editProdBrand" class="fc" placeholder="e.g. ASUS, MSI, Samsung">
+                    </div>
+                </div>
+
+                <div class="fg">
+                    <label>Category <span>*</span></label>
+                    <select name="category" id="editProdCategory" class="fc" required>
+                        <option value="">— Select category —</option>
+                        <?php foreach ($cat_map as $slug => $info): ?>
+                        <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="f-row">
+                    <div class="fg">
+                        <label>Price (LKR) <span>*</span></label>
+                        <input type="number" name="price" id="editProdPrice" class="fc" min="0" step="0.01" required>
+                    </div>
+                    <div class="fg">
+                        <label>Original / MRP (LKR)</label>
+                        <input type="number" name="original_price" id="editProdOrigPrice" class="fc" min="0" step="0.01">
+                        <div class="f-hint">Sets the discount % badge</div>
+                    </div>
+                </div>
+
+                <div class="fg">
+                    <label>Stock Count</label>
+                    <input type="number" name="stock_count" id="editProdStock" class="fc" value="0" min="0">
+                    <div class="f-hint">0 = Out of Stock · 1–5 = Low Stock · 6+ = Active</div>
+                </div>
+
+                <div class="fg">
+                    <label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label>
+                    <textarea name="specs" id="editProdSpecs" class="fc" rows="5"
+                              placeholder="Intel Core i9-14900HX&#10;32GB DDR5&#10;1TB NVMe"></textarea>
+                    <div class="f-hint">Replaces all existing specs on save.</div>
+                </div>
+
+            </div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('editProductModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Product</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
 <!-- ADD CATEGORY MODAL                                            -->
 <!-- ══════════════════════════════════════════════════════════════ -->
 <div class="m-overlay" id="addCatModal">
@@ -1563,7 +1710,7 @@ document.querySelectorAll('.m-overlay').forEach(el => {
     el.addEventListener('click', e => { if (e.target===el) closeModal(el.id); });
 });
 
-/* ── Image preview ───────────────────────────────────────────── */
+/* ── Add Product image preview ───────────────────────────────── */
 function prvFile(inp) {
     if (!inp.files.length) return;
     const r=new FileReader();
@@ -1576,6 +1723,57 @@ function showPrv(src) {
     const ph=document.querySelector('#imgPrev .iph');
     img.src=src; img.style.display='block';
     if (ph) ph.style.display='none';
+}
+
+/* ── Edit Product image preview ──────────────────────────────── */
+function prvFileEdit(inp) {
+    if (!inp.files.length) return;
+    const r = new FileReader();
+    r.onload = e => showPrvEdit(e.target.result);
+    r.readAsDataURL(inp.files[0]);
+}
+function prvUrlEdit(url) { if (url.trim()) showPrvEdit(url); }
+function showPrvEdit(src) {
+    const img = document.getElementById('editImgPrevImg');
+    const ph  = document.getElementById('editImgPh');
+    img.src = src; img.style.display = 'block';
+    if (ph) ph.style.display = 'none';
+}
+
+/* ── Open Edit Product modal ─────────────────────────────────── */
+function openEditProduct(data) {
+    document.getElementById('editProdId').value            = data.id;
+    document.getElementById('editProdName').value          = data.name;
+    document.getElementById('editProdBrand').value         = data.brand || '';
+    document.getElementById('editProdPrice').value         = data.price;
+    document.getElementById('editProdOrigPrice').value     = data.original_price || '';
+    document.getElementById('editProdStock').value         = data.stock_count;
+    document.getElementById('editProdSpecs').value         = data.specs || '';
+    document.getElementById('editProdImageUrl').value      = '';
+    document.getElementById('editProdExistingImage').value = data.image || '';
+
+    // Set category select
+    const sel = document.getElementById('editProdCategory');
+    Array.from(sel.options).forEach(o => { o.selected = (o.value === data.category); });
+
+    // Image preview
+    const img = document.getElementById('editImgPrevImg');
+    const ph  = document.getElementById('editImgPh');
+    if (data.image) {
+        img.src           = '../' + data.image;
+        img.style.display = 'block';
+        ph.style.display  = 'none';
+        img.onerror       = () => { img.style.display='none'; ph.style.display='flex'; };
+    } else {
+        img.style.display = 'none';
+        ph.style.display  = 'flex';
+    }
+
+    // Reset file input
+    const fileInput = document.querySelector('#editProductModal input[type=file]');
+    if (fileInput) fileInput.value = '';
+
+    openModal('editProductModal');
 }
 
 /* ── Slug auto-generation ────────────────────────────────────── */
@@ -1620,7 +1818,6 @@ function openDeleteCat(data) {
     if (data.cnt > 0) {
         msg.innerHTML = `<strong style="color:#dc2626">Warning:</strong> This category has <strong>${data.cnt} product(s)</strong>. Choose how to handle them below.`;
         wrap.style.display = 'block';
-        // Remove the current category from the reassign options
         document.querySelectorAll('#delReassignWrap select option').forEach(opt => {
             opt.hidden = (opt.value === data.slug);
         });

@@ -3,29 +3,51 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-$page_title = 'Contact Us - IT Shop.LK';
+include 'db.php'; // DB connection
 
+$page_title  = 'Contact Us - IT Shop.LK';
 $success_msg = '';
 $error_msg   = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $name    = trim($_POST['name']    ?? '');
-    $email   = trim($_POST['email']   ?? '');
-    $phone   = trim($_POST['phone']   ?? '');
-    $subject = trim($_POST['subject'] ?? '');
-    $message = trim($_POST['message'] ?? '');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
 
-    if ($name && $email && $message) {
-        // ── Mail setup ──────────────────────────────────────────
-        $to      = 'info@itshop.lk'; // ← change to your email
-        $headers = "From: {$name} <{$email}>\r\nReply-To: {$email}\r\nContent-Type: text/plain; charset=UTF-8";
-        $body    = "Name: {$name}\nEmail: {$email}\nPhone: {$phone}\nSubject: {$subject}\n\nMessage:\n{$message}";
+    $name    = mysqli_real_escape_string($conn, trim($_POST['name']    ?? ''));
+    $email   = mysqli_real_escape_string($conn, trim($_POST['email']   ?? ''));
+    $phone   = mysqli_real_escape_string($conn, trim($_POST['phone']   ?? ''));
+    $subject = mysqli_real_escape_string($conn, trim($_POST['subject'] ?? ''));
+    $msg     = mysqli_real_escape_string($conn, trim($_POST['message'] ?? ''));
+
+    if ($name && $email && $msg) {
+
+        // ── 1. Save to database ─────────────────────────────────
+        $insert = "INSERT INTO contact_messages (name, email, phone, subject, message, created_at)
+                   VALUES ('$name', '$email', '$phone', '$subject', '$msg', NOW())";
+        mysqli_query($conn, $insert);
+
+        // ── 2. Send email to webmail ────────────────────────────
+        $to      = "admin@itshop.lk";                        // ← your webmail address
+        $headers  = "From: IT Shop <info@itshop.lk>\r\n";    // must be YOUR domain
+        $headers .= "Reply-To: {$name} <{$email}>\r\n";      // visitor reply address
+        $headers .= "MIME-Version: 1.0\r\n";
+        $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+
+        $body  = "You have a new contact form message from IT Shop.LK\n";
+        $body .= "=================================================\n\n";
+        $body .= "Name    : {$name}\n";
+        $body .= "Email   : {$email}\n";
+        $body .= "Phone   : {$phone}\n";
+        $body .= "Subject : {$subject}\n\n";
+        $body .= "Message :\n{$msg}\n\n";
+        $body .= "=================================================\n";
+        $body .= "Sent from: https://itshop.lk/contact.php\n";
 
         if (mail($to, "IT Shop Contact: {$subject}", $body, $headers)) {
-            $success_msg = 'Message sent! We\'ll get back to you within 24 hours. You can also reach us directly via <a href="https://webmail.itshop.lk" target="_blank" style="color:#065f46;font-weight:700;text-decoration:underline;">our webmail</a>.';
+            $success_msg = 'Message sent successfully! We\'ll get back to you within 24 hours. You can also reach us at <a href="https://webmail.itshop.lk" target="_blank" style="color:#065f46;font-weight:700;text-decoration:underline;">our webmail</a>.';
         } else {
-            $error_msg = 'Sorry, something went wrong. Please try WhatsApp or call us directly.';
+            // Message still saved to DB even if mail fails
+            $success_msg = 'Your message has been saved! We\'ll get back to you within 24 hours.';
         }
+
     } else {
         $error_msg = 'Please fill in Name, Email and Message fields.';
     }
@@ -148,11 +170,7 @@ include 'header.php';
     }
 
     /* ── INFO PANEL ─────────────────────────────────────────── */
-    .info-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 1.25rem;
-    }
+    .info-panel { display: flex; flex-direction: column; gap: 1.25rem; }
 
     .info-card {
         background: var(--card);
@@ -166,18 +184,13 @@ include 'header.php';
         transform: translateX(-20px);
         transition: opacity 0.5s ease, transform 0.5s ease;
     }
-    .info-card.visible {
-        opacity: 1;
-        transform: translateX(0);
-    }
+    .info-card.visible { opacity: 1; transform: translateX(0); }
+
     .info-icon {
-        width: 48px;
-        height: 48px;
+        width: 48px; height: 48px;
         border-radius: var(--radius-md);
         background: var(--accent-light);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        display: flex; align-items: center; justify-content: center;
         flex-shrink: 0;
         transition: background 0.3s ease;
     }
@@ -185,35 +198,22 @@ include 'header.php';
     .info-icon i { font-size: 1.2rem; color: var(--accent); transition: color 0.3s ease; }
     .info-card:hover .info-icon i { color: #fff; }
 
-    .info-content {}
     .info-label {
-        font-size: 0.75rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--ink-muted);
-        margin-bottom: 0.35rem;
+        font-size: 0.75rem; font-weight: 700;
+        letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--ink-muted); margin-bottom: 0.35rem;
     }
-    .info-value {
-        font-size: 0.97rem;
-        font-weight: 600;
-        color: var(--ink);
-        line-height: 1.5;
-    }
-    .info-value a {
-        color: var(--ink);
-        text-decoration: none;
-    }
+    .info-value { font-size: 0.97rem; font-weight: 600; color: var(--ink); line-height: 1.5; }
+    .info-value a { color: var(--ink); text-decoration: none; }
     .info-value a:hover { color: var(--accent); }
 
-    /* Map placeholder */
+    /* Map */
     .map-card {
         background: var(--card);
         border-radius: var(--radius-xl);
         overflow: hidden;
         box-shadow: var(--shadow-card);
-        opacity: 0;
-        transform: translateX(-20px);
+        opacity: 0; transform: translateX(-20px);
         transition: opacity 0.5s 0.3s ease, transform 0.5s 0.3s ease;
         aspect-ratio: 4/3;
     }
@@ -226,118 +226,58 @@ include 'header.php';
         border-radius: var(--radius-xl);
         padding: 2.5rem;
         box-shadow: var(--shadow-card);
-        opacity: 0;
-        transform: translateY(24px);
+        opacity: 0; transform: translateY(24px);
         transition: opacity 0.55s 0.1s ease, transform 0.55s 0.1s ease;
     }
     .form-card.visible { opacity: 1; transform: translateY(0); }
 
-    .form-heading {
-        font-size: 1.5rem;
-        font-weight: 800;
-        color: var(--ink);
-        letter-spacing: -0.02em;
-        margin-bottom: 0.4rem;
-    }
-    .form-sub {
-        font-size: 0.9rem;
-        color: var(--ink-muted);
-        margin-bottom: 2rem;
-    }
+    .form-heading { font-size: 1.5rem; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; margin-bottom: 0.4rem; }
+    .form-sub { font-size: 0.9rem; color: var(--ink-muted); margin-bottom: 2rem; }
 
-    .form-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     @media (max-width: 560px) { .form-row { grid-template-columns: 1fr; } }
 
-    .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.45rem;
-        margin-bottom: 1.1rem;
-    }
-    .form-label {
-        font-size: 0.82rem;
-        font-weight: 700;
-        color: var(--ink-soft);
-        letter-spacing: 0.02em;
-    }
+    .form-group { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 1.1rem; }
+    .form-label { font-size: 0.82rem; font-weight: 700; color: var(--ink-soft); letter-spacing: 0.02em; }
     .form-label span { color: var(--accent); }
 
     .form-control {
         font-family: 'Red Hat Display', sans-serif;
-        font-size: 0.95rem;
-        font-weight: 500;
-        color: var(--ink);
+        font-size: 0.95rem; font-weight: 500; color: var(--ink);
         background: var(--surface);
         border: 1.5px solid rgba(10,10,15,0.1);
         border-radius: var(--radius-md);
-        padding: 12px 16px;
-        outline: none;
+        padding: 12px 16px; outline: none;
         transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
         width: 100%;
     }
-    .form-control:focus {
-        border-color: var(--accent);
-        background: #fff;
-        box-shadow: 0 0 0 4px var(--accent-glow);
-    }
+    .form-control:focus { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 4px var(--accent-glow); }
     .form-control::placeholder { color: var(--ink-muted); }
-
-    textarea.form-control {
-        resize: vertical;
-        min-height: 140px;
-    }
-
-    /* subject select */
+    textarea.form-control { resize: vertical; min-height: 140px; }
     select.form-control {
-        cursor: pointer;
-        appearance: none;
+        cursor: pointer; appearance: none;
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238888a0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 14px center;
-        padding-right: 40px;
+        background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
     }
 
     .btn-submit {
-        width: 100%;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        background: var(--accent);
-        color: #fff;
-        font-family: 'Red Hat Display', sans-serif;
-        font-weight: 700;
-        font-size: 1rem;
-        padding: 15px 28px;
-        border-radius: var(--radius-md);
-        border: none;
-        cursor: pointer;
+        width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+        background: var(--accent); color: #fff;
+        font-family: 'Red Hat Display', sans-serif; font-weight: 700; font-size: 1rem;
+        padding: 15px 28px; border-radius: var(--radius-md); border: none; cursor: pointer;
         transition: all 0.25s ease;
         box-shadow: 0 4px 20px rgba(13,255,0,0.35);
         margin-top: 0.5rem;
     }
-    .btn-submit:hover {
-        background: var(--accent-dark);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(13,255,0,0.4);
-    }
+    .btn-submit:hover { background: var(--accent-dark); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(13,255,0,0.4); }
     .btn-submit:active { transform: translateY(0); }
 
-    /* ── ALERT MESSAGES ─────────────────────────────────────── */
+    /* ── ALERTS ─────────────────────────────────────────────── */
     .alert {
-        border-radius: var(--radius-md);
-        padding: 14px 18px;
-        font-size: 0.92rem;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 1.5rem;
-        animation: fadeDown 0.4s ease both;
+        border-radius: var(--radius-md); padding: 14px 18px;
+        font-size: 0.92rem; font-weight: 600;
+        display: flex; align-items: center; gap: 10px;
+        margin-bottom: 1.5rem; animation: fadeDown 0.4s ease both; flex-wrap: wrap;
     }
     .alert-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
     .alert-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
@@ -345,71 +285,29 @@ include 'header.php';
 
     /* ── WHATSAPP FAB ───────────────────────────────────────── */
     .wa-btn {
-        position: fixed;
-        bottom: 24px; right: 24px;
-        width: 56px; height: 56px;
-        background: #25d366;
-        color: white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-        z-index: 9999;
-        text-decoration: none;
+        position: fixed; bottom: 24px; right: 24px;
+        width: 56px; height: 56px; background: #25d366; color: white;
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        font-size: 1.5rem; z-index: 9999; text-decoration: none;
         box-shadow: 0 6px 20px rgba(37,211,102,0.45);
         transition: transform 0.25s ease, box-shadow 0.25s ease;
     }
-    .wa-btn:hover {
-        transform: scale(1.1);
-        box-shadow: 0 10px 30px rgba(37,211,102,0.55);
-        color: white;
-        text-decoration: none;
-    }
+    .wa-btn:hover { transform: scale(1.1); box-shadow: 0 10px 30px rgba(37,211,102,0.55); color: white; text-decoration: none; }
 
     /* ── SOCIAL STRIP ───────────────────────────────────────── */
-    .social-strip {
-        display: flex;
-        gap: 10px;
-        margin-top: 0.5rem;
-    }
+    .social-strip { display: flex; gap: 10px; margin-top: 0.5rem; }
     .social-btn {
-        width: 40px; height: 40px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.1rem;
-        text-decoration: none;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        color: #fff;
+        width: 40px; height: 40px; border-radius: 10px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; text-decoration: none;
+        transition: transform 0.2s ease; color: #fff;
     }
     .social-btn:hover { transform: translateY(-3px); color: #fff; text-decoration: none; }
-    .social-fb   { background: #1877f2; }
-    .social-ig   { background: linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); }
-    .social-tw   { background: #1da1f2; }
-    .social-wa   { background: #25d366; }
+    .social-fb { background: #1877f2; }
+    .social-ig { background: linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); }
+    .social-tw { background: #1da1f2; }
+    .social-wa { background: #25d366; }
 
-    /* ── DIVIDER ─────────────────────────────────────────────── */
-    .form-divider {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin: 1.5rem 0;
-        color: var(--ink-muted);
-        font-size: 0.82rem;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-    }
-    .form-divider::before,
-    .form-divider::after {
-        content: '';
-        flex: 1;
-        height: 1px;
-        background: rgba(10,10,15,0.1);
-    }
-
-    /* ── ANIMATION ──────────────────────────────────────────── */
     @keyframes fadeDown {
         from { opacity: 0; transform: translateY(-14px); }
         to   { opacity: 1; transform: translateY(0); }
@@ -428,7 +326,7 @@ include 'header.php';
 <!-- CONTACT BODY -->
 <div class="contact-wrap">
 
-    <!-- LEFT: Info cards + map -->
+    <!-- LEFT: Info cards -->
     <div class="info-panel">
 
         <div class="info-card">
@@ -448,7 +346,7 @@ include 'header.php';
                 <div class="info-label">Email</div>
                 <div class="info-value">
                     <a href="mailto:info@itshop.lk">info@itshop.lk</a><br>
-                    <a href="mailto:sales@itshop.lk">sales@itshop.lk</a>
+                    <a href="mailto:admin@itshop.lk">admin@itshop.lk</a>
                 </div>
             </div>
         </div>
@@ -478,7 +376,12 @@ include 'header.php';
             </div>
         </div>
 
-        <!-- Embedded Google Map — replace src with your actual embed URL -->
+        <!-- Google Map — replace src with your embed URL -->
+        <!--
+        <div class="map-card">
+            <iframe src="YOUR_GOOGLE_MAP_EMBED_URL" allowfullscreen loading="lazy"></iframe>
+        </div>
+        -->
 
     </div><!-- /info-panel -->
 
@@ -488,9 +391,15 @@ include 'header.php';
         <p class="form-sub">Fill out the form and our team will contact you as soon as possible.</p>
 
         <?php if ($success_msg): ?>
-            <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo $success_msg; ?></div>
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i>
+                <span><?php echo $success_msg; ?></span>
+            </div>
         <?php elseif ($error_msg): ?>
-            <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error_msg); ?></div>
+            <div class="alert alert-error">
+                <i class="fas fa-exclamation-circle"></i>
+                <span><?php echo htmlspecialchars($error_msg); ?></span>
+            </div>
         <?php endif; ?>
 
         <form method="POST" action="contact.php" novalidate>
@@ -521,11 +430,11 @@ include 'header.php';
                     <label class="form-label" for="subject">Subject</label>
                     <select id="subject" name="subject" class="form-control">
                         <option value="" disabled <?php echo empty($_POST['subject']) ? 'selected' : ''; ?>>Select a topic…</option>
-                        <option value="Product Inquiry"    <?php echo (($_POST['subject'] ?? '') === 'Product Inquiry')    ? 'selected' : ''; ?>>Product Inquiry</option>
-                        <option value="Price Quote"        <?php echo (($_POST['subject'] ?? '') === 'Price Quote')        ? 'selected' : ''; ?>>Price Quote</option>
-                        <option value="Warranty / Repair"  <?php echo (($_POST['subject'] ?? '') === 'Warranty / Repair')  ? 'selected' : ''; ?>>Warranty / Repair</option>
-                        <option value="Bulk Order"         <?php echo (($_POST['subject'] ?? '') === 'Bulk Order')         ? 'selected' : ''; ?>>Bulk Order</option>
-                        <option value="Other"              <?php echo (($_POST['subject'] ?? '') === 'Other')              ? 'selected' : ''; ?>>Other</option>
+                        <option value="Product Inquiry"   <?php echo (($_POST['subject'] ?? '') === 'Product Inquiry')   ? 'selected' : ''; ?>>Product Inquiry</option>
+                        <option value="Price Quote"       <?php echo (($_POST['subject'] ?? '') === 'Price Quote')       ? 'selected' : ''; ?>>Price Quote</option>
+                        <option value="Warranty / Repair" <?php echo (($_POST['subject'] ?? '') === 'Warranty / Repair') ? 'selected' : ''; ?>>Warranty / Repair</option>
+                        <option value="Bulk Order"        <?php echo (($_POST['subject'] ?? '') === 'Bulk Order')        ? 'selected' : ''; ?>>Bulk Order</option>
+                        <option value="Other"             <?php echo (($_POST['subject'] ?? '') === 'Other')             ? 'selected' : ''; ?>>Other</option>
                     </select>
                 </div>
             </div>
@@ -536,7 +445,7 @@ include 'header.php';
                           placeholder="Tell us what you're looking for…" required><?php echo htmlspecialchars($_POST['message'] ?? ''); ?></textarea>
             </div>
 
-            <button type="submit" class="btn-submit">
+            <button type="submit" name="submit" class="btn-submit">
                 <i class="fas fa-paper-plane"></i> Send Message
             </button>
 
@@ -554,12 +463,10 @@ include 'header.php';
 <?php
 $extra_scripts = <<<'JS'
 <script>
-    // Intersection Observer — animate in info cards & form card
     const els = document.querySelectorAll('.info-card, .map-card, .form-card');
     const io = new IntersectionObserver(entries => {
         entries.forEach((e, idx) => {
             if (e.isIntersecting) {
-                // stagger info cards
                 setTimeout(() => e.target.classList.add('visible'), idx * 80);
                 io.unobserve(e.target);
             }

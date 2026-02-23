@@ -445,9 +445,9 @@ function cancelPending() {
                         </div>
                         <div class="bank-info">
                             <div class="bank-detail-row"><span>Bank</span><strong>Commercial Bank of Ceylon</strong></div>
-                            <div class="bank-detail-row"><span>Account Name</span><strong>STC Electronics (Pvt) Ltd</strong></div>
+                            <div class="bank-detail-row"><span>Account Name</span><strong>itshop.lk</strong></div>
                             <div class="bank-detail-row"><span>Account No.</span><strong>1234567890</strong></div>
-                            <div class="bank-detail-row"><span>Branch</span><strong>Negombo</strong></div>
+                            <div class="bank-detail-row"><span>Branch</span><strong>Malabe</strong></div>
                             <p style="font-size:.78rem;color:var(--text-muted);margin-top:.75rem 0 0;">Please use your Order ID as the payment reference. Orders are confirmed after deposit verification (1–2 business days).</p>
                         </div>
                     </label>

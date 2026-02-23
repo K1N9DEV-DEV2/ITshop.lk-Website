@@ -21,11 +21,20 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
 $active      = $_GET['page'] ?? 'dashboard';
 $admin_email = $_SESSION['admin_email'] ?? 'admin@itshop.lk';
 
+// ── Role-based access ─────────────────────────────────────────────────────────
+$admin_role    = $_SESSION['admin_role'] ?? 'admin';
+$is_superadmin = $admin_role === 'superadmin';
+
+if ($active === 'settings' && !$is_superadmin) {
+    header('Location: ?page=dashboard');
+    exit;
+}
+
 // ── DB connection ─────────────────────────────────────────────────────────────
 $pdo      = null;
 $db_error = '';
 try {
-    require_once '../db.php'; // your existing PDO file
+    require_once '../db.php';
 } catch (Throwable $e) {
     $db_error = $e->getMessage();
 }
@@ -41,25 +50,41 @@ function dbq(string $sql, array $p = [], bool $all = true): array|false {
     } catch (PDOException $e) { return false; }
 }
 
-// ── Category map — mirrors products.php fallback list exactly ─────────────────
-$cat_map = [
-    'casings'      => ['label' => 'Casings',            'icon' => 'fa-server'],
-    'cooling'      => ['label' => 'Cooling & Lighting', 'icon' => 'fa-fan'],
-    'desktops'     => ['label' => 'Desktop PCs',        'icon' => 'fa-desktop'],
-    'graphics'     => ['label' => 'Graphics Cards',     'icon' => 'fa-tv'],
-    'peripherals'  => ['label' => 'Keyboards & Mouse',  'icon' => 'fa-keyboard'],
-    'laptops'      => ['label' => 'Laptops',            'icon' => 'fa-laptop'],
-    'memory'       => ['label' => 'Memory (RAM)',       'icon' => 'fa-memory'],
-    'monitors'     => ['label' => 'Monitors',           'icon' => 'fa-display'],
-    'motherboards' => ['label' => 'Motherboards',       'icon' => 'fa-microchip'],
-    'processors'   => ['label' => 'Processors',         'icon' => 'fa-microchip'],
-    'storage'      => ['label' => 'Storage',            'icon' => 'fa-hard-drive'],
-    'power'        => ['label' => 'Power Supply',       'icon' => 'fa-bolt'],
-    'audio'        => ['label' => 'Speakers & Headset', 'icon' => 'fa-headphones'],
-];
+// ── Slug helper ───────────────────────────────────────────────────────────────
+function slugify(string $text): string {
+    $text = strtolower(trim($text));
+    $text = preg_replace('/[^a-z0-9]+/', '_', $text);
+    return trim($text, '_');
+}
+
+// ── Ensure categories table has the right columns ─────────────────────────────
+// Adds icon column if missing (safe to run every load; MySQL ignores if exists)
+if ($pdo) {
+    try {
+        $pdo->exec("ALTER TABLE categories ADD COLUMN IF NOT EXISTS slug VARCHAR(100) NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon VARCHAR(50) NOT NULL DEFAULT 'fa-tag'");
+        // Back-fill slugs for any rows that don't have one
+        $pdo->exec("UPDATE categories SET slug = LOWER(REPLACE(REPLACE(name,' ','_'),'&','')) WHERE slug = '' OR slug IS NULL");
+    } catch (PDOException $e) { /* silently skip if unsupported */ }
+}
+
+// ── Load categories from DB (primary source of truth) ────────────────────────
+$db_categories = dbq("SELECT * FROM categories ORDER BY name ASC") ?: [];
+
+// Build a lookup map: slug → category row  (fallback uses name as slug)
+$cat_map = [];
+foreach ($db_categories as $cat) {
+    $slug = $cat['slug'] ?: slugify($cat['name']);
+    $cat_map[$slug] = [
+        'id'    => $cat['id'],
+        'label' => $cat['name'],
+        'icon'  => $cat['icon'] ?? 'fa-tag',
+        'desc'  => $cat['description'] ?? '',
+        'slug'  => $slug,
+    ];
+}
 
 // ── Live DB queries ───────────────────────────────────────────────────────────
-// Products with specs (same JOIN used in products.php)
 $db_products = dbq(
     "SELECT p.id, p.name, p.category, p.price, p.original_price,
             p.image, p.brand, p.stock_count,
@@ -71,7 +96,6 @@ $db_products = dbq(
      ORDER BY p.name ASC"
 ) ?: [];
 
-// Inventory aggregates
 $agg = dbq(
     "SELECT COUNT(*) as total_products,
             COALESCE(SUM(stock_count),0) as total_stock,
@@ -81,17 +105,28 @@ $agg = dbq(
     [], false
 ) ?: ['total_products'=>0,'total_stock'=>0,'out_of_stock'=>0,'low_stock'=>0];
 
-// Category breakdown from DB
+// Category counts joined from DB categories (left join so we see categories with 0 products too)
 $cat_counts = dbq(
-    "SELECT category, COUNT(*) as cnt, COALESCE(SUM(stock_count),0) as stock
-     FROM products WHERE category IS NOT NULL AND category != ''
-     GROUP BY category ORDER BY cnt DESC"
+    "SELECT c.id, c.name, c.slug, c.icon,
+            COUNT(p.id) as cnt,
+            COALESCE(SUM(p.stock_count),0) as stock
+     FROM categories c
+     LEFT JOIN products p ON p.category = c.slug
+     GROUP BY c.id
+     ORDER BY cnt DESC, c.name ASC"
 ) ?: [];
 
-// Users (customers)
+// Also detect any products whose category slug has no matching categories row
+$orphan_cats = dbq(
+    "SELECT p.category, COUNT(*) as cnt, COALESCE(SUM(p.stock_count),0) as stock
+     FROM products p
+     LEFT JOIN categories c ON c.slug = p.category
+     WHERE c.id IS NULL AND p.category != ''
+     GROUP BY p.category"
+) ?: [];
+
 $db_customers = dbq("SELECT id, name, email, created_at FROM users ORDER BY created_at DESC LIMIT 50") ?: [];
 
-// Orders
 $db_orders = dbq(
     "SELECT o.id, o.status, o.total, o.created_at,
             u.name as customer_name, u.email as customer_email
@@ -103,7 +138,7 @@ $db_orders = dbq(
 $order_stats = dbq(
     "SELECT COALESCE(SUM(total),0) as revenue,
             COUNT(*) as total_orders,
-            SUM(CASE WHEN LOWER(status)='pending'   THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN LOWER(status)='pending'    THEN 1 ELSE 0 END) as pending,
             SUM(CASE WHEN DATE(created_at)=CURDATE() THEN 1 ELSE 0 END) as today
      FROM orders",
     [], false
@@ -116,7 +151,112 @@ $flash = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
     $act = $_POST['_action'] ?? '';
 
-    // ADD PRODUCT
+    // ── ADD CATEGORY ──────────────────────────────────────────────────────────
+    if ($act === 'add_category') {
+        $cat_name = trim($_POST['cat_name'] ?? '');
+        $cat_desc = trim($_POST['cat_desc'] ?? '');
+        $cat_icon = trim($_POST['cat_icon'] ?? 'fa-tag');
+        $cat_slug = trim($_POST['cat_slug'] ?? '');
+        if (!$cat_slug) $cat_slug = slugify($cat_name);
+
+        if ($cat_name) {
+            try {
+                $pdo->prepare(
+                    "INSERT INTO categories (name, description, slug, icon) VALUES (?, ?, ?, ?)"
+                )->execute([$cat_name, $cat_desc, $cat_slug, $cat_icon]);
+                $flash = ['type' => 'success', 'msg' => "Category \"$cat_name\" added."];
+            } catch (PDOException $e) {
+                $flash = ['type' => 'error', 'msg' => 'Could not add category: ' . $e->getMessage()];
+            }
+        } else {
+            $flash = ['type' => 'error', 'msg' => 'Category name is required.'];
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=categories');
+        exit;
+    }
+
+    // ── EDIT CATEGORY ─────────────────────────────────────────────────────────
+    if ($act === 'edit_category') {
+        $cid      = intval($_POST['cat_id'] ?? 0);
+        $cat_name = trim($_POST['cat_name'] ?? '');
+        $cat_desc = trim($_POST['cat_desc'] ?? '');
+        $cat_icon = trim($_POST['cat_icon'] ?? 'fa-tag');
+        $cat_slug = trim($_POST['cat_slug'] ?? '');
+        $old_slug = trim($_POST['old_slug'] ?? '');
+
+        if ($cid && $cat_name) {
+            try {
+                $pdo->prepare(
+                    "UPDATE categories SET name=?, description=?, slug=?, icon=?, updated_at=NOW() WHERE id=?"
+                )->execute([$cat_name, $cat_desc, $cat_slug, $cat_icon, $cid]);
+
+                // Migrate products if slug changed
+                if ($old_slug && $old_slug !== $cat_slug) {
+                    $pdo->prepare("UPDATE products SET category=? WHERE category=?")->execute([$cat_slug, $old_slug]);
+                }
+                $flash = ['type' => 'success', 'msg' => "Category updated."];
+            } catch (PDOException $e) {
+                $flash = ['type' => 'error', 'msg' => 'Could not update: ' . $e->getMessage()];
+            }
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=categories');
+        exit;
+    }
+
+    // ── DELETE CATEGORY ───────────────────────────────────────────────────────
+    if ($act === 'delete_category') {
+        $cid      = intval($_POST['cat_id'] ?? 0);
+        $cat_slug = trim($_POST['cat_slug'] ?? '');
+        $reassign = trim($_POST['reassign_slug'] ?? '');
+
+        if ($cid) {
+            try {
+                if ($reassign) {
+                    // Move products to another category
+                    $pdo->prepare("UPDATE products SET category=? WHERE category=?")->execute([$reassign, $cat_slug]);
+                } else {
+                    // Null-out the category on orphaned products
+                    $pdo->prepare("UPDATE products SET category='' WHERE category=?")->execute([$cat_slug]);
+                }
+                $pdo->prepare("DELETE FROM categories WHERE id=?")->execute([$cid]);
+                $flash = ['type' => 'success', 'msg' => 'Category deleted.'];
+            } catch (PDOException $e) {
+                $flash = ['type' => 'error', 'msg' => 'Could not delete: ' . $e->getMessage()];
+            }
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=categories');
+        exit;
+    }
+
+    // ── IMPORT ORPHAN CATEGORIES ──────────────────────────────────────────────
+    // Creates a categories row for any product category slug that has no match
+    if ($act === 'import_orphans') {
+        $imported = 0;
+        $orphans  = dbq(
+            "SELECT DISTINCT p.category FROM products p
+             LEFT JOIN categories c ON c.slug = p.category
+             WHERE c.id IS NULL AND p.category != ''"
+        ) ?: [];
+        foreach ($orphans as $row) {
+            $sl  = $row['category'];
+            $lbl = ucwords(str_replace(['_', '-'], ' ', $sl));
+            try {
+                $pdo->prepare(
+                    "INSERT IGNORE INTO categories (name, slug, icon) VALUES (?, ?, 'fa-tag')"
+                )->execute([$lbl, $sl]);
+                $imported++;
+            } catch (PDOException $e) {}
+        }
+        $flash = ['type' => 'success', 'msg' => "$imported orphan category/categories imported."];
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=categories');
+        exit;
+    }
+
+    // ── ADD PRODUCT ───────────────────────────────────────────────────────────
     if ($act === 'add_product') {
         $name     = trim($_POST['name'] ?? '');
         $brand    = trim($_POST['brand'] ?? '');
@@ -126,7 +266,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $stock    = intval($_POST['stock_count'] ?? 0);
         $image    = trim($_POST['image_url'] ?? '');
 
-        // File upload
         if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             $ext     = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
             $allowed = ['jpg','jpeg','png','webp','gif'];
@@ -148,7 +287,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
                 $new_id = $pdo->lastInsertId();
 
-                // Insert specs into product_specs
                 $specs_raw = trim($_POST['specs'] ?? '');
                 if ($specs_raw && $new_id) {
                     $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name) VALUES (?, ?)");
@@ -167,7 +305,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // DELETE PRODUCT
+    // ── DELETE PRODUCT ────────────────────────────────────────────────────────
     if ($act === 'delete_product') {
         $del_id = intval($_POST['product_id'] ?? 0);
         if ($del_id) {
@@ -184,7 +322,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // UPDATE STOCK
+    // ── UPDATE STOCK ──────────────────────────────────────────────────────────
     if ($act === 'update_stock') {
         $pid   = intval($_POST['product_id'] ?? 0);
         $stock = max(0, intval($_POST['stock_count'] ?? 0));
@@ -196,7 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // UPDATE ORDER STATUS
+    // ── UPDATE ORDER STATUS ───────────────────────────────────────────────────
     if ($act === 'update_order_status') {
         $oid    = intval($_POST['order_id'] ?? 0);
         $status = trim($_POST['status'] ?? '');
@@ -206,6 +344,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             catch (PDOException $e) {}
         }
         header('Location: ?page=orders');
+        exit;
+    }
+
+    // ── CLEAR ALL ORDERS — superadmin only ───────────────────────────────────
+    if ($act === 'clear_orders' && $is_superadmin) {
+        try {
+            $pdo->exec("DELETE FROM orders");
+            $flash = ['type' => 'success', 'msg' => 'All orders have been cleared.'];
+        } catch (PDOException $e) {
+            $flash = ['type' => 'error', 'msg' => 'Could not clear orders: ' . $e->getMessage()];
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=settings');
         exit;
     }
 }
@@ -222,14 +373,23 @@ $status_colors = [
     'cancelled'  => ['bg' => '#fee2e2', 'color' => '#dc2626'],
 ];
 
+// ── Nav items ─────────────────────────────────────────────────────────────────
 $nav_items = [
-    ['page' => 'dashboard',  'icon' => 'fa-gauge-high',   'label' => 'Dashboard'],
-    ['page' => 'products',   'icon' => 'fa-box',          'label' => 'Products'],
-    ['page' => 'orders',     'icon' => 'fa-bag-shopping', 'label' => 'Orders'],
-    ['page' => 'customers',  'icon' => 'fa-users',        'label' => 'Customers'],
-    ['page' => 'categories', 'icon' => 'fa-layer-group',  'label' => 'Categories'],
-    ['page' => 'reports',    'icon' => 'fa-chart-line',   'label' => 'Reports'],
-    ['page' => 'settings',   'icon' => 'fa-gear',         'label' => 'Settings'],
+    ['page' => 'dashboard',  'icon' => 'fa-gauge-high',   'label' => 'Dashboard',  'roles' => ['admin','superadmin']],
+    ['page' => 'products',   'icon' => 'fa-box',          'label' => 'Products',   'roles' => ['admin','superadmin']],
+    ['page' => 'orders',     'icon' => 'fa-bag-shopping', 'label' => 'Orders',     'roles' => ['admin','superadmin']],
+    ['page' => 'customers',  'icon' => 'fa-users',        'label' => 'Customers',  'roles' => ['admin','superadmin']],
+    ['page' => 'categories', 'icon' => 'fa-layer-group',  'label' => 'Categories', 'roles' => ['admin','superadmin']],
+    ['page' => 'reports',    'icon' => 'fa-chart-line',   'label' => 'Reports',    'roles' => ['admin','superadmin']],
+    ['page' => 'settings',   'icon' => 'fa-gear',         'label' => 'Settings',   'roles' => ['superadmin']],
+];
+
+// Common icon options for the picker
+$icon_options = [
+    'fa-tag','fa-box','fa-laptop','fa-desktop','fa-server','fa-microchip','fa-memory',
+    'fa-hard-drive','fa-tv','fa-display','fa-keyboard','fa-mouse','fa-headphones',
+    'fa-fan','fa-bolt','fa-mobile-screen','fa-camera','fa-gamepad','fa-print',
+    'fa-network-wired','fa-wifi','fa-battery-full','fa-plug','fa-toolbox',
 ];
 ?>
 <!DOCTYPE html>
@@ -317,6 +477,8 @@ $nav_items = [
         .btn-sm { padding:6px 13px !important; font-size:.77rem !important; }
         .btn-red { background:#ef4444 !important; box-shadow:0 2px 10px rgba(239,68,68,.3) !important; }
         .btn-red:hover { background:#dc2626 !important; }
+        .btn-warn { background:#f59e0b !important; box-shadow:0 2px 10px rgba(245,158,11,.3) !important; }
+        .btn-warn:hover { background:#d97706 !important; }
 
         /* ── STATS ───────────────────────────────────────────── */
         .stats-g { display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:13px; margin-bottom:1.6rem; }
@@ -351,12 +513,14 @@ $nav_items = [
         .sl { background:#fef9c3; color:#854d0e; }
         .so { background:#fee2e2; color:#dc2626; }
         .si { background:#f3f4f6; color:#6b7280; }
+        .sw { background:#fef3c7; color:#92400e; } /* warning/orphan */
 
         /* ── ACTION BTNS ─────────────────────────────────────── */
         .ab { width:28px; height:28px; border-radius:7px; border:1px solid rgba(10,10,15,.08); background:var(--surface); color:var(--ink-muted); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:.74rem; transition:all .14s; text-decoration:none; }
         .ab:hover     { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
         .ab.del:hover { border-color:#ef4444; color:#ef4444; background:#fee2e2; }
         .ab.warn:hover{ border-color:#f59e0b; color:#f59e0b; background:#fef9c3; }
+        .ab.edit:hover{ border-color:#3b82f6; color:#3b82f6; background:#dbeafe; }
 
         /* ── SEARCH IN TC ────────────────────────────────────── */
         .tbl-s { background:var(--surface); border:1.5px solid rgba(10,10,15,.08); border-radius:var(--r-md); padding:7px 11px; font-family:'Red Hat Display',sans-serif; font-size:.82rem; color:var(--ink); outline:none; transition:border-color .2s; }
@@ -406,12 +570,18 @@ $nav_items = [
         .toggle input:checked + .tgl-sl::before { transform:translateX(18px); }
 
         /* ── CAT GRID ────────────────────────────────────────── */
-        .cg { display:grid; grid-template-columns:repeat(auto-fill,minmax(245px,1fr)); gap:12px; margin-top:1.35rem; }
-        .cg-c { background:var(--card); border-radius:var(--r-lg); padding:1.1rem; box-shadow:var(--shadow); display:flex; align-items:center; gap:12px; animation:fadeUp .4s ease both; }
-        .cg-ico { width:40px; height:40px; border-radius:var(--r-md); background:var(--accent-dim); display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:1rem; flex-shrink:0; }
+        .cg { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+        .cg-c { background:var(--card); border-radius:var(--r-lg); padding:1rem 1.1rem; box-shadow:var(--shadow); display:flex; align-items:center; gap:12px; animation:fadeUp .4s ease both; transition:box-shadow .18s; }
+        .cg-c:hover { box-shadow:0 4px 24px rgba(10,10,15,.13); }
+        .cg-ico { width:42px; height:42px; border-radius:var(--r-md); background:var(--accent-dim); display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:1.05rem; flex-shrink:0; }
         .cg-b { flex:1; min-width:0; }
-        .cg-b strong { font-size:.85rem; font-weight:700; color:var(--ink); display:block; }
-        .cg-b span   { font-size:.74rem; color:var(--ink-muted); }
+        .cg-b strong { font-size:.86rem; font-weight:700; color:var(--ink); display:block; }
+        .cg-b span   { font-size:.73rem; color:var(--ink-muted); }
+        .cg-b .slug-tag { font-size:.62rem; background:var(--surface); color:var(--ink-muted); border-radius:4px; padding:1px 5px; margin-top:2px; display:inline-block; font-family:monospace; }
+        .cg-actions { display:flex; gap:4px; flex-shrink:0; }
+
+        /* ── ORPHAN ALERT ────────────────────────────────────── */
+        .orphan-alert { background:#fef9c3; border:1.5px solid #fde047; border-radius:var(--r-md); padding:.8rem 1rem; margin-bottom:1.1rem; font-size:.83rem; color:#854d0e; display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
 
         /* ── FILTER TABS ─────────────────────────────────────── */
         .ftabs { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:1rem; }
@@ -446,12 +616,23 @@ $nav_items = [
         .img-prev { width:100%; height:130px; background:var(--surface); border-radius:var(--r-md); border:1.5px dashed rgba(10,10,15,.12); display:flex; align-items:center; justify-content:center; margin-bottom:8px; overflow:hidden; position:relative; }
         .img-prev img { max-width:100%; max-height:100%; object-fit:contain; display:none; }
         .img-prev .iph { color:var(--ink-muted); font-size:1.7rem; }
+        /* Icon picker */
+        .icon-grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+        .icon-opt { width:34px; height:34px; border-radius:var(--r-sm); background:var(--surface); border:1.5px solid rgba(10,10,15,.1); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .14s; font-size:.9rem; color:var(--ink-muted); }
+        .icon-opt:hover   { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+        .icon-opt.selected{ border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+        .icon-preview { width:38px; height:38px; border-radius:var(--r-md); background:var(--accent-dim); display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:1.1rem; flex-shrink:0; }
 
         /* ── FLASH ───────────────────────────────────────────── */
         .flash { display:flex; align-items:center; gap:9px; padding:.85rem 1.1rem; border-radius:var(--r-md); font-size:.86rem; font-weight:600; margin-bottom:1.2rem; animation:fadeUp .3s ease; }
         .flash.success { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; }
         .flash.error   { background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; }
         .db-warn { background:#fef9c3; border:1px solid #fde047; color:#854d0e; border-radius:var(--r-md); padding:.7rem 1rem; font-size:.81rem; font-weight:600; margin-bottom:1.1rem; display:flex; align-items:center; gap:7px; }
+
+        /* ── ROLE CHIP ───────────────────────────────────────── */
+        .role-chip { display:inline-flex; align-items:center; gap:5px; font-size:.62rem; font-weight:700; padding:2px 8px; border-radius:100px; }
+        .role-chip.superadmin { background:rgba(12,177,0,.15); color:#0cb100; }
+        .role-chip.admin      { background:rgba(59,130,246,.12); color:#1d4ed8; }
 
         /* ── ANIMATION ───────────────────────────────────────── */
         @keyframes fadeUp { from{opacity:0;transform:translateY(11px)} to{opacity:1;transform:translateY(0)} }
@@ -480,10 +661,12 @@ $nav_items = [
     <nav class="sb-nav">
         <div class="sb-section">Main</div>
         <?php foreach ($nav_items as $item): ?>
+        <?php if (!in_array($admin_role, $item['roles'])) continue; ?>
         <a href="?page=<?= $item['page'] ?>" class="nav-link <?= $active===$item['page']?'active':'' ?>">
             <i class="fas <?= $item['icon'] ?>"></i>
             <span><?= $item['label'] ?></span>
             <?php if ($item['page']==='orders' && $pending_count>0): ?><span class="nav-badge"><?= $pending_count ?></span><?php endif; ?>
+            <?php if ($item['page']==='categories' && count($orphan_cats)>0): ?><span class="nav-badge"><?= count($orphan_cats) ?></span><?php endif; ?>
         </a>
         <?php endforeach; ?>
         <div class="sb-section">Account</div>
@@ -496,7 +679,7 @@ $nav_items = [
             <div class="sb-avatar"><?= strtoupper(substr($admin_email,0,1)) ?></div>
             <div class="sb-info">
                 <div class="sb-name"><?= htmlspecialchars($admin_email) ?></div>
-                <div class="sb-role">Super Admin</div>
+                <div class="sb-role"><?= $is_superadmin ? 'Super Admin' : 'Admin' ?></div>
             </div>
             <a href="?action=logout" class="sb-logout" onclick="return confirm('Log out?')" title="Logout"><i class="fas fa-right-from-bracket"></i></a>
         </div>
@@ -509,13 +692,18 @@ $nav_items = [
         <div>
             <?php $ptitles=['dashboard'=>'Dashboard','products'=>'Products','orders'=>'Orders','customers'=>'Customers','categories'=>'Categories','reports'=>'Reports','settings'=>'Settings']; ?>
             <div class="tb-title"><?= $ptitles[$active]??'Dashboard' ?></div>
-            <div class="tb-bc">IT Shop.LK / <?= ucfirst($active) ?></div>
+            <div class="tb-bc">IT Shop.LK / <?= ucfirst($active) ?>
+                <span class="role-chip <?= $admin_role ?>" style="margin-left:6px">
+                    <i class="fas fa-<?= $is_superadmin?'shield-halved':'user' ?>"></i>
+                    <?= $is_superadmin?'Super Admin':'Admin' ?>
+                </span>
+            </div>
         </div>
         <div class="tb-search"><i class="fas fa-search"></i><input type="text" placeholder="Search tables…" id="gSearch"></div>
         <div class="tb-actions">
             <span class="tb-btn" title="Alerts">
                 <i class="fas fa-bell"></i>
-                <?php if ($pending_count>0||($agg['out_of_stock']>0)): ?><span class="notif-dot"></span><?php endif; ?>
+                <?php if ($pending_count>0||($agg['out_of_stock']>0)||count($orphan_cats)>0): ?><span class="notif-dot"></span><?php endif; ?>
             </span>
             <a href="../index.php" class="tb-btn" title="View Store" target="_blank"><i class="fas fa-arrow-up-right-from-square"></i></a>
         </div>
@@ -544,7 +732,7 @@ $nav_items = [
                 <p><?= date('l, d F Y') ?> — store at a glance</p>
             </div>
             <div class="pg-hdr-r">
-                <button class="btn-p" onclick="openModal()"><i class="fas fa-plus"></i> Add Product</button>
+                <button class="btn-p" onclick="openModal('addProductModal')"><i class="fas fa-plus"></i> Add Product</button>
             </div>
         </div>
 
@@ -573,19 +761,19 @@ $nav_items = [
                 <h3>Products per Category</h3>
                 <p>Live count from database</p>
                 <?php if ($cat_counts):
-                    $mc=max(array_column($cat_counts,'cnt')); ?>
+                    $bars = array_filter($cat_counts, fn($c)=>$c['cnt']>0);
+                    if ($bars):
+                        $mc=max(array_column(array_values($bars),'cnt')); ?>
                 <div class="bar-chart">
-                    <?php foreach (array_slice($cat_counts,0,9) as $cc):
-                        $h=$mc>0?round($cc['cnt']/$mc*90):0;
-                        $lbl=strtoupper(substr($cc['category'],0,3));
-                    ?>
+                    <?php foreach (array_slice(array_values($bars),0,9) as $cc):
+                        $h=$mc>0?round($cc['cnt']/$mc*90):0; ?>
                     <div class="bar-col">
-                        <div class="bar" style="height:<?= $h ?>px" title="<?= $cc['category'] ?>: <?= $cc['cnt'] ?>"></div>
-                        <div class="bar-lbl"><?= $lbl ?></div>
+                        <div class="bar" style="height:<?= $h ?>px" title="<?= htmlspecialchars($cc['name']) ?>: <?= $cc['cnt'] ?>"></div>
+                        <div class="bar-lbl"><?= strtoupper(substr($cc['slug']??$cc['name'],0,3)) ?></div>
                     </div>
                     <?php endforeach; ?>
                 </div>
-                <?php else: ?><p style="color:var(--ink-muted);font-size:.82rem;margin-top:.5rem">No products in database yet.</p><?php endif; ?>
+                <?php endif; else: ?><p style="color:var(--ink-muted);font-size:.82rem;margin-top:.5rem">No categories yet.</p><?php endif; ?>
             </div>
 
             <div class="cc">
@@ -599,7 +787,7 @@ $nav_items = [
                     <div class="top-rank">#<?= $i+1 ?></div>
                     <div class="top-info">
                         <strong><?= htmlspecialchars($p['name']) ?></strong>
-                        <span><?= htmlspecialchars($p['category']) ?></span>
+                        <span><?= htmlspecialchars($cat_map[$p['category']]['label'] ?? ucfirst($p['category'])) ?></span>
                     </div>
                     <div class="top-val"><?= $p['stock_count'] ?></div>
                 </div>
@@ -632,7 +820,7 @@ $nav_items = [
                 </tbody>
             </table>
             <?php else: ?>
-            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted);font-size:.85rem">No orders yet, or orders table not connected.</div>
+            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted);font-size:.85rem">No orders yet.</div>
             <?php endif; ?>
             </div>
         </div>
@@ -648,16 +836,24 @@ $nav_items = [
             </div>
             <div class="pg-hdr-r">
                 <button class="btn-o btn-sm" onclick="exportTable('prodTable')"><i class="fas fa-download"></i> Export CSV</button>
-                <button class="btn-p" onclick="openModal()"><i class="fas fa-plus"></i> Add Product</button>
+                <button class="btn-p" onclick="openModal('addProductModal')"><i class="fas fa-plus"></i> Add Product</button>
             </div>
         </div>
 
-        <!-- Category filter tabs -->
+        <?php if (empty($cat_map)): ?>
+        <div class="db-warn"><i class="fas fa-layer-group"></i> No categories found in database. <a href="?page=categories" style="color:inherit;font-weight:800;margin-left:4px">Create categories first →</a></div>
+        <?php endif; ?>
+
         <div class="ftabs" id="catTabs">
             <a href="#" class="ftab active" data-cat="all">All (<?= count($db_products) ?>)</a>
-            <?php foreach ($cat_counts as $cc): ?>
-            <a href="#" class="ftab" data-cat="<?= htmlspecialchars($cc['category']) ?>">
-                <?= htmlspecialchars(($cat_map[$cc['category']]['label']??ucfirst($cc['category']))) ?> (<?= $cc['cnt'] ?>)
+            <?php foreach ($cat_counts as $cc): if ($cc['cnt'] < 1) continue; ?>
+            <a href="#" class="ftab" data-cat="<?= htmlspecialchars($cc['slug']) ?>">
+                <?= htmlspecialchars($cc['name']) ?> (<?= $cc['cnt'] ?>)
+            </a>
+            <?php endforeach; ?>
+            <?php foreach ($orphan_cats as $oc): ?>
+            <a href="#" class="ftab" data-cat="<?= htmlspecialchars($oc['category']) ?>" style="border-color:#f59e0b;color:#92400e">
+                ⚠ <?= htmlspecialchars($oc['category']) ?> (<?= $oc['cnt'] ?>)
             </a>
             <?php endforeach; ?>
         </div>
@@ -677,14 +873,14 @@ $nav_items = [
                     $stk=(int)$p['stock_count'];
                     $scls=$stk===0?'so':($stk<=5?'sl':'sa');
                     $slbl=$stk===0?'Out of Stock':($stk<=5?'Low Stock':'Active');
-                    $disc=($p['original_price']>$p['price']&&$p['original_price']>0)
-                        ?round(($p['original_price']-$p['price'])/$p['original_price']*100).'% OFF':'—';
+                    $cat_label=$cat_map[$p['category']]['label'] ?? ucfirst($p['category']);
+                    $is_orphan = $p['category'] && !isset($cat_map[$p['category']]);
                 ?>
                 <tr data-cat="<?= htmlspecialchars($p['category']) ?>">
                     <td class="muted"><?= $p['id'] ?></td>
                     <td>
                         <?php if ($p['image']): ?>
-                        <img src="<?= htmlspecialchars($p['image']) ?>" style="width:38px;height:38px;object-fit:contain;border-radius:6px;background:var(--surface)" onerror="this.style.display='none'">
+                        <img src="../<?= htmlspecialchars($p['image']) ?>" style="width:38px;height:38px;object-fit:contain;border-radius:6px;background:var(--surface)" onerror="this.style.display='none'">
                         <?php else: ?>
                         <div style="width:38px;height:38px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:.77rem"><i class="fas fa-image"></i></div>
                         <?php endif; ?>
@@ -697,8 +893,9 @@ $nav_items = [
                     </td>
                     <td><?= htmlspecialchars($p['brand']??'—') ?></td>
                     <td>
-                        <span class="sb si" style="font-size:.67rem">
-                            <?= htmlspecialchars($cat_map[$p['category']]['label']??ucfirst($p['category'])) ?>
+                        <span class="sb <?= $is_orphan?'sw':'si' ?>" style="font-size:.67rem" title="<?= $is_orphan?'Category not in DB — orphan':'Mapped category' ?>">
+                            <?php if ($is_orphan): ?><i class="fas fa-triangle-exclamation" style="font-size:.6rem"></i> <?php endif; ?>
+                            <?= htmlspecialchars($cat_label) ?>
                         </span>
                     </td>
                     <td><strong><?= number_format($p['price'],2) ?></strong></td>
@@ -714,8 +911,8 @@ $nav_items = [
                     <td><span class="sb <?= $scls ?>"><?= $slbl ?></span></td>
                     <td>
                         <div style="display:flex;gap:4px">
-                            <a href="product-details.php?id=<?= $p['id'] ?>" class="ab" target="_blank" title="View on site"><i class="fas fa-eye"></i></a>
-                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete product #<?= $p['id'] ?> — <?= addslashes(htmlspecialchars($p['name'])) ?>?\nThis also removes its specs and cannot be undone.')">
+                            <a href="../product-details.php?id=<?= $p['id'] ?>" class="ab" target="_blank" title="View on site"><i class="fas fa-eye"></i></a>
+                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete product #<?= $p['id'] ?> — <?= addslashes(htmlspecialchars($p['name'])) ?>?\nThis also removes its specs.')">
                                 <input type="hidden" name="_action" value="delete_product">
                                 <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
                                 <button type="submit" class="ab del" title="Delete"><i class="fas fa-trash"></i></button>
@@ -788,7 +985,7 @@ $nav_items = [
                 </tbody>
             </table>
             <?php else: ?>
-            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted)">No orders yet, or orders table not connected.</div>
+            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted)">No orders yet.</div>
             <?php endif; ?>
             </div>
         </div>
@@ -830,7 +1027,7 @@ $nav_items = [
                 </tbody>
             </table>
             <?php else: ?>
-            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted)">No customers yet, or users table not connected.</div>
+            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted)">No customers yet.</div>
             <?php endif; ?>
             </div>
         </div>
@@ -840,41 +1037,103 @@ $nav_items = [
         <?php elseif ($active==='categories'): ?>
 
         <div class="pg-hdr">
-            <div class="pg-hdr-l"><h2>Categories</h2><p><?= count($cat_counts) ?> active categories in database</p></div>
-        </div>
-
-        <div class="cg">
-            <?php if ($cat_counts): foreach ($cat_counts as $i=>$cc):
-                $info=$cat_map[$cc['category']]??['label'=>ucfirst($cc['category']),'icon'=>'fa-tag']; ?>
-            <div class="cg-c" style="animation-delay:<?= $i*45 ?>ms">
-                <div class="cg-ico"><i class="fas <?= $info['icon'] ?>"></i></div>
-                <div class="cg-b">
-                    <strong><?= htmlspecialchars($info['label']) ?></strong>
-                    <span><?= $cc['cnt'] ?> products · <?= (int)$cc['stock'] ?> units total</span>
-                </div>
-                <a href="products.php?category=<?= urlencode($cc['category']) ?>" class="ab" target="_blank" title="View on site"><i class="fas fa-arrow-up-right-from-square"></i></a>
+            <div class="pg-hdr-l">
+                <h2>Categories</h2>
+                <p><?= count($db_categories) ?> categories in DB · <?= count($orphan_cats) ?> orphaned product slugs</p>
             </div>
-            <?php endforeach; else: ?>
-            <p style="color:var(--ink-muted);font-size:.85rem;padding:.5rem 0">No categories found. Add products first.</p>
-            <?php endif; ?>
+            <div class="pg-hdr-r">
+                <?php if (count($orphan_cats)>0): ?>
+                <form method="POST" style="display:inline" onsubmit="return confirm('Auto-import <?= count($orphan_cats) ?> orphan category slug(s) into the categories table?')">
+                    <input type="hidden" name="_action" value="import_orphans">
+                    <button type="submit" class="btn-o btn-sm btn-warn"><i class="fas fa-file-import"></i> Import <?= count($orphan_cats) ?> Orphan<?= count($orphan_cats)>1?'s':'' ?></button>
+                </form>
+                <?php endif; ?>
+                <button class="btn-p" onclick="openModal('addCatModal')"><i class="fas fa-plus"></i> Add Category</button>
+            </div>
         </div>
 
+        <?php if (count($orphan_cats)>0): ?>
+        <div class="orphan-alert">
+            <span><i class="fas fa-triangle-exclamation"></i> <strong><?= count($orphan_cats) ?> product category slug(s)</strong> exist in products but have no matching categories row:
+            <?php foreach ($orphan_cats as $oc): ?>
+                <code style="background:rgba(0,0,0,.08);padding:1px 5px;border-radius:4px;margin-left:4px"><?= htmlspecialchars($oc['category']) ?></code>
+            <?php endforeach; ?>
+            </span>
+            <span style="font-size:.77rem;color:#92400e">These products show ⚠ in the Products page. Click "Import Orphans" to fix.</span>
+        </div>
+        <?php endif; ?>
+
+        <?php if (count($db_categories)===0): ?>
+        <div class="db-warn"><i class="fas fa-layer-group"></i> No categories yet. Add your first category to get started. Categories are used as dropdown options when adding products.</div>
+        <?php endif; ?>
+
+        <!-- Category Cards -->
+        <div class="cg">
+            <?php foreach ($db_categories as $i=>$cat):
+                $sl = $cat['slug'] ?: slugify($cat['name']);
+                // Find cnt for this category
+                $cat_cnt = 0; $cat_stock = 0;
+                foreach ($cat_counts as $cc) { if ($cc['id']==$cat['id']) { $cat_cnt=$cc['cnt']; $cat_stock=$cc['stock']; break; } }
+            ?>
+            <div class="cg-c" style="animation-delay:<?= $i*35 ?>ms">
+                <div class="cg-ico"><i class="fas <?= htmlspecialchars($cat['icon']??'fa-tag') ?>"></i></div>
+                <div class="cg-b">
+                    <strong><?= htmlspecialchars($cat['name']) ?></strong>
+                    <span><?= $cat_cnt ?> product<?= $cat_cnt!=1?'s':'' ?> · <?= (int)$cat_stock ?> units</span>
+                    <div class="slug-tag"><?= htmlspecialchars($sl) ?></div>
+                </div>
+                <div class="cg-actions">
+                    <button class="ab edit" title="Edit" onclick="openEditCat(<?= htmlspecialchars(json_encode([
+                        'id'=>$cat['id'],'name'=>$cat['name'],'slug'=>$sl,
+                        'desc'=>$cat['description']??'','icon'=>$cat['icon']??'fa-tag'
+                    ])) ?>)"><i class="fas fa-pen"></i></button>
+                    <button class="ab del" title="Delete" onclick="openDeleteCat(<?= htmlspecialchars(json_encode([
+                        'id'=>$cat['id'],'name'=>$cat['name'],'slug'=>$sl,'cnt'=>$cat_cnt
+                    ])) ?>)"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <!-- Category Table -->
         <div class="tc" style="margin-top:1.35rem">
-            <div class="tc-hdr"><div><h3>Category Details</h3><p>From live products table</p></div></div>
+            <div class="tc-hdr">
+                <div><h3>All Categories</h3><p>Stored in <code style="background:var(--surface);padding:1px 5px;border-radius:4px">categories</code> table · slug maps to <code style="background:var(--surface);padding:1px 5px;border-radius:4px">products.category</code></p></div>
+                <input type="text" class="tbl-s" placeholder="Search…" id="catSearch" style="width:170px">
+            </div>
             <div class="tbl-wrap">
-            <table>
-                <thead><tr><th>DB Slug</th><th>Display Name</th><th>Products</th><th>Stock Units</th><th>Front-end Link</th></tr></thead>
+            <table id="catTable">
+                <thead><tr><th>ID</th><th>Icon</th><th>Name</th><th>Slug (FK)</th><th>Description</th><th>Products</th><th>Stock</th><th>Actions</th></tr></thead>
                 <tbody>
-                    <?php foreach ($cat_counts as $cc):
-                        $info=$cat_map[$cc['category']]??['label'=>ucfirst($cc['category']),'icon'=>'fa-tag']; ?>
+                    <?php foreach ($db_categories as $cat):
+                        $sl = $cat['slug'] ?: slugify($cat['name']);
+                        $cat_cnt = 0; $cat_stock = 0;
+                        foreach ($cat_counts as $cc) { if ($cc['id']==$cat['id']) { $cat_cnt=$cc['cnt']; $cat_stock=$cc['stock']; break; } }
+                    ?>
                     <tr>
-                        <td><code style="background:var(--surface);padding:2px 7px;border-radius:5px;font-size:.74rem"><?= htmlspecialchars($cc['category']) ?></code></td>
-                        <td><strong><?= htmlspecialchars($info['label']) ?></strong></td>
-                        <td><?= $cc['cnt'] ?></td>
-                        <td><?= (int)$cc['stock'] ?></td>
-                        <td><a href="products.php?category=<?= urlencode($cc['category']) ?>" target="_blank" class="ab" title="Open"><i class="fas fa-arrow-up-right-from-square"></i></a></td>
+                        <td class="muted"><?= $cat['id'] ?></td>
+                        <td><div style="width:30px;height:30px;border-radius:6px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent)"><i class="fas <?= htmlspecialchars($cat['icon']??'fa-tag') ?>"></i></div></td>
+                        <td><strong><?= htmlspecialchars($cat['name']) ?></strong></td>
+                        <td><code style="background:var(--surface);padding:2px 7px;border-radius:5px;font-size:.74rem"><?= htmlspecialchars($sl) ?></code></td>
+                        <td class="muted" style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($cat['description']??'—') ?></td>
+                        <td><?= $cat_cnt ?></td>
+                        <td><?= (int)$cat_stock ?></td>
+                        <td>
+                            <div style="display:flex;gap:4px">
+                                <button class="ab edit" title="Edit" onclick="openEditCat(<?= htmlspecialchars(json_encode([
+                                    'id'=>$cat['id'],'name'=>$cat['name'],'slug'=>$sl,
+                                    'desc'=>$cat['description']??'','icon'=>$cat['icon']??'fa-tag'
+                                ])) ?>)"><i class="fas fa-pen"></i></button>
+                                <button class="ab del" title="Delete" onclick="openDeleteCat(<?= htmlspecialchars(json_encode([
+                                    'id'=>$cat['id'],'name'=>$cat['name'],'slug'=>$sl,'cnt'=>$cat_cnt
+                                ])) ?>)"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </td>
                     </tr>
                     <?php endforeach; ?>
+                    <?php if (!$db_categories): ?>
+                    <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--ink-muted)">No categories yet.</td></tr>
+                    <?php endif; ?>
                 </tbody>
             </table>
             </div>
@@ -914,15 +1173,17 @@ $nav_items = [
                 <h3>Products by Category</h3>
                 <p>Distribution of catalogue items</p>
                 <?php if ($cat_counts):
-                    $mc2=max(array_column($cat_counts,'cnt'));
-                    foreach ($cat_counts as $cc):
-                        $info=$cat_map[$cc['category']]??['label'=>ucfirst($cc['category'])];
-                        $pct=$mc2>0?round($cc['cnt']/$mc2*100):0; ?>
+                    $has_products = array_filter($cat_counts, fn($c)=>$c['cnt']>0);
+                    if ($has_products):
+                        $mc2=max(array_column(array_values($has_products),'cnt'));
+                        foreach ($has_products as $cc):
+                            $pct=$mc2>0?round($cc['cnt']/$mc2*100):0; ?>
                 <div class="pw">
-                    <div class="pw-l"><span><?= htmlspecialchars($info['label']) ?></span><span><?= $cc['cnt'] ?> products</span></div>
+                    <div class="pw-l"><span><?= htmlspecialchars($cc['name']) ?></span><span><?= $cc['cnt'] ?> products</span></div>
                     <div class="pw-bg"><div class="pw-f" style="width:<?= $pct ?>%"></div></div>
                 </div>
-                <?php endforeach; endif; ?>
+                <?php endforeach; else: ?><p style="color:var(--ink-muted);font-size:.82rem">No products assigned to categories.</p><?php endif;
+                endif; ?>
             </div>
 
             <div class="cc">
@@ -970,8 +1231,12 @@ $nav_items = [
         </div>
 
 
-        <?php /* ─────────── SETTINGS ─────────── */ ?>
+        <?php /* ─────────── SETTINGS (superadmin only) ─────────── */ ?>
         <?php elseif ($active==='settings'): ?>
+
+        <?php if (!$is_superadmin): ?>
+        <div class="db-warn"><i class="fas fa-lock"></i> Access denied. Settings are restricted to Super Admins only.</div>
+        <?php else: ?>
 
         <div class="pg-hdr">
             <div class="pg-hdr-l"><h2>Settings</h2><p>Store configuration and preferences</p></div>
@@ -1025,10 +1290,13 @@ $nav_items = [
         </div>
 
         <div class="sc">
-            <div class="sc-hdr"><i class="fas fa-lock"></i> Admin Account</div>
+            <div class="sc-hdr"><i class="fas fa-users-gear"></i> Admin Accounts</div>
             <div class="sc-row">
-                <div class="sc-i"><strong>Admin Email</strong><span>Login credential</span></div>
-                <input type="email" class="f-input" value="<?= htmlspecialchars($admin_email) ?>">
+                <div class="sc-i">
+                    <strong>Logged-in Account</strong>
+                    <span><?= htmlspecialchars($admin_email) ?></span>
+                </div>
+                <span class="role-chip superadmin"><i class="fas fa-shield-halved"></i> Super Admin</span>
             </div>
             <div class="sc-row">
                 <div class="sc-i"><strong>New Password</strong><span>Leave blank to keep current</span></div>
@@ -1044,28 +1312,34 @@ $nav_items = [
             <div class="sc-hdr" style="color:#dc2626"><i class="fas fa-triangle-exclamation" style="color:#ef4444"></i> Danger Zone</div>
             <div class="sc-row">
                 <div class="sc-i"><strong style="color:#dc2626">Clear All Orders</strong><span>Permanently deletes every order record</span></div>
-                <button class="btn-p btn-red btn-sm" onclick="return confirm('Delete ALL orders permanently?')"><i class="fas fa-trash"></i> Clear Orders</button>
+                <form method="POST" onsubmit="return confirm('Delete ALL orders permanently? This cannot be undone.')">
+                    <input type="hidden" name="_action" value="clear_orders">
+                    <button type="submit" class="btn-p btn-red btn-sm"><i class="fas fa-trash"></i> Clear Orders</button>
+                </form>
             </div>
         </div>
 
         <?php endif; ?>
 
+        <?php endif; /* end page switch */ ?>
+
     </main>
 </div>
 
 
-<!-- ══ ADD PRODUCT MODAL ══ -->
-<div class="m-overlay" id="addModal">
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ADD PRODUCT MODAL                                             -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="m-overlay" id="addProductModal">
     <div class="modal">
         <div class="m-hdr">
             <h3><i class="fas fa-plus" style="color:var(--accent);margin-right:6px"></i>Add New Product</h3>
-            <button class="m-close" onclick="closeModal()"><i class="fas fa-xmark"></i></button>
+            <button class="m-close" onclick="closeModal('addProductModal')"><i class="fas fa-xmark"></i></button>
         </div>
         <form method="POST" enctype="multipart/form-data" action="?page=products">
             <input type="hidden" name="_action" value="add_product">
             <div class="m-body">
 
-                <!-- Image -->
                 <div class="fg">
                     <label>Product Image</label>
                     <div class="img-prev" id="imgPrev">
@@ -1084,7 +1358,6 @@ $nav_items = [
                     </div>
                 </div>
 
-                <!-- Name + Brand -->
                 <div class="f-row">
                     <div class="fg">
                         <label>Product Name <span>*</span></label>
@@ -1096,18 +1369,23 @@ $nav_items = [
                     </div>
                 </div>
 
-                <!-- Category -->
                 <div class="fg">
                     <label>Category <span>*</span></label>
+                    <?php if (empty($cat_map)): ?>
+                    <div style="background:#fef9c3;border:1px solid #fde047;border-radius:var(--r-md);padding:9px 11px;font-size:.82rem;color:#854d0e">
+                        <i class="fas fa-triangle-exclamation"></i> No categories found. <a href="?page=categories" style="color:inherit;font-weight:800">Create categories first →</a>
+                    </div>
+                    <input type="hidden" name="category" value="">
+                    <?php else: ?>
                     <select name="category" class="fc" required>
                         <option value="">— Select category —</option>
                         <?php foreach ($cat_map as $slug=>$info): ?>
-                        <option value="<?= $slug ?>"><?= htmlspecialchars($info['label']) ?></option>
+                        <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <?php endif; ?>
                 </div>
 
-                <!-- Price + Original Price -->
                 <div class="f-row">
                     <div class="fg">
                         <label>Price (LKR) <span>*</span></label>
@@ -1120,23 +1398,21 @@ $nav_items = [
                     </div>
                 </div>
 
-                <!-- Stock -->
                 <div class="fg">
                     <label>Stock Count <span>*</span></label>
                     <input type="number" name="stock_count" class="fc" value="0" min="0" required>
                     <div class="f-hint">0 = Out of Stock · 1–5 = Low Stock badge · 6+ = Active</div>
                 </div>
 
-                <!-- Specs → product_specs table -->
                 <div class="fg">
-                    <label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line → product_specs table)</small></label>
-                    <textarea name="specs" class="fc" placeholder="Intel Core i9-14900HX&#10;32GB DDR5 5600MHz&#10;1TB NVMe Gen4 SSD&#10;NVIDIA RTX 4080 12GB&#10;2560×1600 240Hz OLED"></textarea>
-                    <div class="f-hint">Each line inserts one row in product_specs. Shown as spec tags on the product card and in the admin table above.</div>
+                    <label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label>
+                    <textarea name="specs" class="fc" placeholder="Intel Core i9-14900HX&#10;32GB DDR5 5600MHz&#10;1TB NVMe Gen4 SSD"></textarea>
+                    <div class="f-hint">Each line inserts one row in product_specs.</div>
                 </div>
 
             </div>
             <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal()">Cancel</button>
+                <button type="button" class="btn-o" onclick="closeModal('addProductModal')">Cancel</button>
                 <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Product</button>
             </div>
         </form>
@@ -1144,11 +1420,148 @@ $nav_items = [
 </div>
 
 
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ADD CATEGORY MODAL                                            -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="m-overlay" id="addCatModal">
+    <div class="modal">
+        <div class="m-hdr">
+            <h3><i class="fas fa-layer-group" style="color:var(--accent);margin-right:6px"></i>Add Category</h3>
+            <button class="m-close" onclick="closeModal('addCatModal')"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form method="POST" action="?page=categories">
+            <input type="hidden" name="_action" value="add_category">
+            <div class="m-body">
+                <div class="f-row">
+                    <div class="fg">
+                        <label>Category Name <span>*</span></label>
+                        <input type="text" name="cat_name" id="addCatName" class="fc" placeholder="e.g. Graphics Cards" required oninput="autoSlug(this,'addCatSlug')">
+                    </div>
+                    <div class="fg">
+                        <label>Slug <span style="color:var(--ink-muted);font-weight:500">(auto-generated)</span></label>
+                        <input type="text" name="cat_slug" id="addCatSlug" class="fc" placeholder="e.g. graphics_cards">
+                        <div class="f-hint">Used as <code>products.category</code> foreign key</div>
+                    </div>
+                </div>
+                <div class="fg">
+                    <label>Description</label>
+                    <textarea name="cat_desc" class="fc" placeholder="Optional description…"></textarea>
+                </div>
+                <div class="fg">
+                    <label>Icon <small style="font-weight:500;color:var(--ink-muted)">(FontAwesome class)</small></label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                        <div class="icon-preview" id="addIconPreview"><i class="fas fa-tag" id="addIconPreviewI"></i></div>
+                        <input type="text" name="cat_icon" id="addCatIcon" class="fc" value="fa-tag" placeholder="fa-tag" oninput="updateIconPreview('add')">
+                    </div>
+                    <div class="icon-grid" id="addIconGrid">
+                        <?php foreach ($icon_options as $ico): ?>
+                        <div class="icon-opt <?= $ico==='fa-tag'?'selected':'' ?>" title="<?= $ico ?>" onclick="selectIcon('add','<?= $ico ?>')"><i class="fas <?= $ico ?>"></i></div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('addCatModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Category</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- EDIT CATEGORY MODAL                                           -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="m-overlay" id="editCatModal">
+    <div class="modal">
+        <div class="m-hdr">
+            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Category</h3>
+            <button class="m-close" onclick="closeModal('editCatModal')"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form method="POST" action="?page=categories">
+            <input type="hidden" name="_action" value="edit_category">
+            <input type="hidden" name="cat_id"   id="editCatId">
+            <input type="hidden" name="old_slug"  id="editOldSlug">
+            <div class="m-body">
+                <div class="f-row">
+                    <div class="fg">
+                        <label>Category Name <span>*</span></label>
+                        <input type="text" name="cat_name" id="editCatName" class="fc" required>
+                    </div>
+                    <div class="fg">
+                        <label>Slug</label>
+                        <input type="text" name="cat_slug" id="editCatSlug" class="fc">
+                        <div class="f-hint">⚠ Changing slug renames in products too</div>
+                    </div>
+                </div>
+                <div class="fg">
+                    <label>Description</label>
+                    <textarea name="cat_desc" id="editCatDesc" class="fc"></textarea>
+                </div>
+                <div class="fg">
+                    <label>Icon</label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                        <div class="icon-preview" id="editIconPreview"><i class="fas fa-tag" id="editIconPreviewI"></i></div>
+                        <input type="text" name="cat_icon" id="editCatIcon" class="fc" placeholder="fa-tag" oninput="updateIconPreview('edit')">
+                    </div>
+                    <div class="icon-grid" id="editIconGrid">
+                        <?php foreach ($icon_options as $ico): ?>
+                        <div class="icon-opt" title="<?= $ico ?>" onclick="selectIcon('edit','<?= $ico ?>')"><i class="fas <?= $ico ?>"></i></div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('editCatModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Category</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- DELETE CATEGORY MODAL                                         -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="m-overlay" id="deleteCatModal">
+    <div class="modal" style="max-width:440px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-trash" style="color:#ef4444;margin-right:6px"></i>Delete Category</h3>
+            <button class="m-close" onclick="closeModal('deleteCatModal')"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form method="POST" action="?page=categories">
+            <input type="hidden" name="_action" value="delete_category">
+            <input type="hidden" name="cat_id"   id="delCatId">
+            <input type="hidden" name="cat_slug"  id="delCatSlug">
+            <div class="m-body">
+                <p id="delCatMsg" style="font-size:.87rem;color:var(--ink-soft);margin-bottom:1rem"></p>
+                <div class="fg" id="delReassignWrap" style="display:none">
+                    <label>Reassign products to:</label>
+                    <select name="reassign_slug" class="fc">
+                        <option value="">— Remove category (leave blank) —</option>
+                        <?php foreach ($db_categories as $cat): ?>
+                        <option value="<?= htmlspecialchars($cat['slug']??slugify($cat['name'])) ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="f-hint">Choosing a category moves all products; leaving blank clears their category field.</div>
+                </div>
+            </div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('deleteCatModal')">Cancel</button>
+                <button type="submit" class="btn-p btn-red"><i class="fas fa-trash"></i> Delete</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
 <script>
-/* ── Modal ───────────────────────────────────────────────────── */
-function openModal()  { document.getElementById('addModal').classList.add('open'); document.body.style.overflow='hidden'; }
-function closeModal() { document.getElementById('addModal').classList.remove('open'); document.body.style.overflow=''; }
-document.getElementById('addModal').addEventListener('click', e => { if (e.target===e.currentTarget) closeModal(); });
+/* ── Modal helpers ───────────────────────────────────────────── */
+function openModal(id)  { document.getElementById(id).classList.add('open'); document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow=''; }
+document.querySelectorAll('.m-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target===el) closeModal(el.id); });
+});
 
 /* ── Image preview ───────────────────────────────────────────── */
 function prvFile(inp) {
@@ -1163,6 +1576,59 @@ function showPrv(src) {
     const ph=document.querySelector('#imgPrev .iph');
     img.src=src; img.style.display='block';
     if (ph) ph.style.display='none';
+}
+
+/* ── Slug auto-generation ────────────────────────────────────── */
+function autoSlug(nameInput, slugFieldId) {
+    const slugEl = document.getElementById(slugFieldId);
+    if (!slugEl) return;
+    slugEl.value = nameInput.value.toLowerCase().trim()
+        .replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+}
+
+/* ── Icon picker ─────────────────────────────────────────────── */
+function updateIconPreview(prefix) {
+    const val = document.getElementById(prefix+'CatIcon').value.trim() || 'fa-tag';
+    document.getElementById(prefix+'IconPreviewI').className = 'fas '+val;
+    document.querySelectorAll('#'+prefix+'IconGrid .icon-opt').forEach(el => {
+        el.classList.toggle('selected', el.title===val);
+    });
+}
+function selectIcon(prefix, ico) {
+    document.getElementById(prefix+'CatIcon').value = ico;
+    updateIconPreview(prefix);
+}
+
+/* ── Open Edit Category modal ────────────────────────────────── */
+function openEditCat(data) {
+    document.getElementById('editCatId').value   = data.id;
+    document.getElementById('editCatName').value = data.name;
+    document.getElementById('editCatSlug').value = data.slug;
+    document.getElementById('editOldSlug').value = data.slug;
+    document.getElementById('editCatDesc').value = data.desc;
+    document.getElementById('editCatIcon').value = data.icon;
+    updateIconPreview('edit');
+    openModal('editCatModal');
+}
+
+/* ── Open Delete Category modal ──────────────────────────────── */
+function openDeleteCat(data) {
+    document.getElementById('delCatId').value   = data.id;
+    document.getElementById('delCatSlug').value = data.slug;
+    const wrap = document.getElementById('delReassignWrap');
+    const msg  = document.getElementById('delCatMsg');
+    if (data.cnt > 0) {
+        msg.innerHTML = `<strong style="color:#dc2626">Warning:</strong> This category has <strong>${data.cnt} product(s)</strong>. Choose how to handle them below.`;
+        wrap.style.display = 'block';
+        // Remove the current category from the reassign options
+        document.querySelectorAll('#delReassignWrap select option').forEach(opt => {
+            opt.hidden = (opt.value === data.slug);
+        });
+    } else {
+        msg.textContent = `Delete category "${data.name}"? It has no products, so this is safe.`;
+        wrap.style.display = 'none';
+    }
+    openModal('deleteCatModal');
 }
 
 /* ── Category filter (Products page) ────────────────────────── */
@@ -1205,13 +1671,15 @@ function liveSearch(inputId, tableId) {
 liveSearch('prodSearch','prodTable');
 liveSearch('orderSearch','orderTable');
 liveSearch('custSearch','custTable');
+liveSearch('catSearch','catTable');
 
-/* Global search → searches whichever table is visible */
+/* Global search */
 document.getElementById('gSearch')?.addEventListener('input',function(){
     const q=this.value.toLowerCase();
-    document.querySelectorAll('table tbody tr').forEach(row=>{
-        if (row.closest('#prodTable')||row.closest('#orderTable')||row.closest('#custTable'))
+    ['prodTable','orderTable','custTable','catTable'].forEach(tid=>{
+        document.querySelectorAll(`#${tid} tbody tr`).forEach(row=>{
             row.style.display=row.textContent.toLowerCase().includes(q)?'':'none';
+        });
     });
 });
 

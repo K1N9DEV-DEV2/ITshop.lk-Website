@@ -6,8 +6,18 @@ error_reporting(E_ALL);
 session_start();
 
 // Simple credentials
-define('ADMIN_EMAIL',    'admin@itshop.lk');
-define('ADMIN_PASSWORD', 'adminitshop123');
+$admin_accounts = [
+    [
+        'email'    => 'admin@itshop.lk',
+        'password' => 'adminitshop123',
+        'role'     => 'admin'
+    ],
+    [
+        'email'    => 'superadmin@itshop.lk',
+        'password' => 'superadmin123',
+        'role'     => 'superadmin'
+    ],
+];
 
 $error = '';
 
@@ -15,12 +25,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email    = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if ($email === ADMIN_EMAIL && $password === ADMIN_PASSWORD) {
-        $_SESSION['admin_logged_in'] = true;
-        $_SESSION['admin_email']     = $email;
-        header('Location: admin_dashboard.php');
-        exit;
-    } else {
+    $matched = false;
+    foreach ($admin_accounts as $account) {
+        if ($email === $account['email'] && $password === $account['password']) {
+            $_SESSION['admin_logged_in'] = true;
+            $_SESSION['admin_email']     = $email;
+            $_SESSION['admin_role']      = $account['role'];
+            $matched = true;
+            header('Location: admin_dashboard.php');
+            exit;
+        }
+    }
+
+    if (!$matched) {
         $error = 'Invalid email or password. Please try again.';
     }
 }
@@ -307,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         type="email"
                         id="email"
                         name="email"
-                        placeholder="admin@itshop.lk"
+                        placeholder="email"
                         value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
                         required
                         autocomplete="username"

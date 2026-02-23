@@ -125,6 +125,18 @@ $page_title       = 'Shopping Cart - STC Electronics Store';
 $page_description = 'Review your selected items and proceed to checkout';
 
 include 'header.php';
+
+// Build cart items JSON for JS
+$cart_items_json = json_encode(array_map(function($item) use ($user_currency) {
+    return [
+        'name'       => $item['name'],
+        'brand'      => $item['brand'],
+        'quantity'   => $item['quantity'],
+        'price'      => $item['current_price'],
+        'item_total' => $item['item_total'],
+        'currency'   => $user_currency,
+    ];
+}, $cart_items));
 ?>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -323,8 +335,8 @@ include 'header.php';
                     </div>
 
                     <div class="summary-actions">
-                        <button class="btn-checkout" onclick="proceedToCheckout()">
-                            <i class="fas fa-lock me-2"></i>Secure Checkout
+                        <button class="btn-checkout" onclick="openOrderModal()">
+                            <i class="fas fa-bag-shopping me-2"></i>Place Order
                         </button>
                         <a href="products.php" class="btn-outline-round">
                             <i class="fas fa-arrow-left me-1"></i> Continue Shopping
@@ -383,8 +395,98 @@ include 'header.php';
     </div>
 </section>
 
+<!-- ══ Place Order Modal ══════════════════════════════════════════ -->
+<div id="orderModal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-header">
+            <div class="modal-icon">
+                <i class="fas fa-shopping-bag"></i>
+            </div>
+            <div>
+                <h5 id="modalTitle">Complete Your Order</h5>
+                <p>Fill in your details to place the order</p>
+            </div>
+            <button class="modal-close" onclick="closeOrderModal()" aria-label="Close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div class="modal-body">
+            <!-- Step 1: Form -->
+            <div id="modalFormStep">
+                <div class="form-group">
+                    <label class="form-label" for="orderFullName">
+                        <i class="fas fa-user"></i> Full Name <span class="req">*</span>
+                    </label>
+                    <input type="text" id="orderFullName" class="form-input"
+                           placeholder="Enter your full name" autocomplete="name">
+                    <div class="field-error" id="nameError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="orderPhone">
+                        <i class="fas fa-phone"></i> Phone Number <span class="req">*</span>
+                    </label>
+                    <input type="tel" id="orderPhone" class="form-input"
+                           placeholder="e.g. 0771234567" autocomplete="tel">
+                    <div class="field-error" id="phoneError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="orderEmail">
+                        <i class="fas fa-envelope"></i> Email Address <span class="req">*</span>
+                    </label>
+                    <input type="email" id="orderEmail" class="form-input"
+                           placeholder="you@example.com" autocomplete="email">
+                    <div class="field-error" id="emailError"></div>
+                </div>
+
+                <!-- Order mini summary -->
+                <div class="modal-order-summary">
+                    <div class="mos-title">Order Summary</div>
+                    <div id="mosItems" class="mos-items"></div>
+                    <div class="mos-total">
+                        <span>Total</span>
+                        <span id="mosTotal"></span>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="modal-btn-cancel" onclick="closeOrderModal()">Cancel</button>
+                    <button class="modal-btn-confirm" id="confirmOrderBtn" onclick="confirmOrder()">
+                        <i class="fas fa-check me-1"></i> Confirm Order
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Success -->
+            <div id="modalSuccessStep" style="display:none;" class="modal-success">
+                <div class="success-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <h5>Order Placed Successfully!</h5>
+                <p>Thank you! Your order <strong id="successOrderNumber"></strong> has been received.<br>
+                   We'll contact you shortly to confirm the details.</p>
+                <div class="redirect-countdown">
+                    <div class="countdown-bar"><div id="countdownFill" class="countdown-fill"></div></div>
+                    <span id="countdownText">Redirecting to home in <strong id="countdownNum">5</strong>s…</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Toast container -->
 <div id="toast-container"></div>
+
+<!-- Pass PHP cart data to JS -->
+<script>
+const CART_ITEMS   = <?php echo $cart_items_json; ?>;
+const CART_TOTAL   = <?php echo $cart_total; ?>;
+const CART_SUBTOTAL = <?php echo $subtotal; ?>;
+const SHIPPING_COST = <?php echo $shipping_cost; ?>;
+const CURRENCY     = '<?php echo $user_currency; ?>';
+</script>
 
 <!-- ══ Styles ══════════════════════════════════════════════════════ -->
 <style>
@@ -1025,6 +1127,264 @@ include 'header.php';
     }
     .fade-in { animation: fadeUp 0.45s ease-out both; }
 
+    /* ══════════════════════════════════════════
+       MODAL STYLES
+    ══════════════════════════════════════════ */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(4px);
+        z-index: 10000;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .modal-overlay.active {
+        display: flex;
+        animation: overlayFadeIn 0.25s ease;
+    }
+    @keyframes overlayFadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+
+    .modal-box {
+        background: var(--surface);
+        border-radius: var(--radius-xl);
+        width: 100%;
+        max-width: 520px;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.22);
+        overflow: hidden;
+        animation: modalSlideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes modalSlideUp {
+        from { transform: translateY(40px) scale(0.97); opacity: 0; }
+        to   { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1.5rem 1.5rem 1rem;
+        border-bottom: 1px solid var(--border);
+    }
+    .modal-icon {
+        width: 48px; height: 48px;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        border-radius: 14px;
+        display: flex; align-items: center; justify-content: center;
+        color: white;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .modal-header h5 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin: 0 0 0.15rem;
+        color: var(--text-primary);
+    }
+    .modal-header p {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        margin: 0;
+    }
+    .modal-close {
+        margin-left: auto;
+        width: 34px; height: 34px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: none;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+    .modal-close:hover { background: var(--danger); border-color: var(--danger); color: white; }
+
+    .modal-body { padding: 1.5rem; }
+
+    .form-group { margin-bottom: 1.1rem; }
+    .form-label {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 0.4rem;
+    }
+    .form-label i { color: var(--primary); font-size: 0.8rem; }
+    .form-label .req { color: var(--danger); }
+    .form-input {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 1.5px solid var(--border);
+        border-radius: var(--radius-sm);
+        font-family: var(--font);
+        font-size: 0.95rem;
+        color: var(--text-primary);
+        background: var(--bg);
+        transition: border-color 0.2s, box-shadow 0.2s;
+        outline: none;
+    }
+    .form-input:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(12, 177, 0, 0.12);
+        background: white;
+    }
+    .form-input.is-invalid {
+        border-color: var(--danger);
+        box-shadow: 0 0 0 3px rgba(239,68,68,0.1);
+    }
+    .field-error {
+        font-size: 0.78rem;
+        color: var(--danger);
+        margin-top: 0.3rem;
+        min-height: 1em;
+    }
+
+    /* Mini order summary inside modal */
+    .modal-order-summary {
+        background: var(--bg);
+        border-radius: var(--radius-md);
+        padding: 1rem 1.1rem;
+        margin: 1.25rem 0;
+        border: 1px solid var(--border);
+    }
+    .mos-title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+    }
+    .mos-items { margin-bottom: 0.75rem; }
+    .mos-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        padding: 0.3rem 0;
+        border-bottom: 1px solid var(--border);
+        gap: 0.5rem;
+    }
+    .mos-item:last-child { border-bottom: none; }
+    .mos-item-name { flex: 1; }
+    .mos-item-qty { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
+    .mos-item-price { font-weight: 600; white-space: nowrap; font-family: var(--font-mono); }
+    .mos-total {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        padding-top: 0.5rem;
+        border-top: 2px solid var(--border);
+    }
+    .mos-total span:last-child { color: var(--primary); }
+
+    .modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 0.5rem;
+    }
+    .modal-btn-cancel {
+        flex: 1;
+        padding: 0.75rem;
+        border: 1.5px solid var(--border);
+        border-radius: var(--radius-md);
+        background: none;
+        font-family: var(--font);
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .modal-btn-cancel:hover { background: var(--bg); color: var(--text-primary); }
+    .modal-btn-confirm {
+        flex: 2;
+        padding: 0.75rem;
+        border: none;
+        border-radius: var(--radius-md);
+        background: var(--primary);
+        font-family: var(--font);
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: white;
+        cursor: pointer;
+        transition: all 0.25s;
+        display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+    }
+    .modal-btn-confirm:hover { background: var(--primary-dark); transform: translateY(-1px); }
+    .modal-btn-confirm:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+    /* Success step */
+    .modal-success {
+        text-align: center;
+        padding: 1rem 0.5rem;
+    }
+    .success-icon {
+        font-size: 3.5rem;
+        color: var(--primary);
+        margin-bottom: 1rem;
+        animation: successPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes successPop {
+        from { transform: scale(0.5); opacity: 0; }
+        to   { transform: scale(1); opacity: 1; }
+    }
+    /* Redirect countdown */
+    .redirect-countdown {
+        margin-top: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .countdown-bar {
+        width: 100%;
+        max-width: 260px;
+        height: 4px;
+        background: var(--border);
+        border-radius: 100px;
+        overflow: hidden;
+    }
+    .countdown-fill {
+        height: 100%;
+        width: 100%;
+        background: var(--primary);
+        border-radius: 100px;
+        transform-origin: left;
+        animation: countdownShrink 3s linear forwards;
+    }
+    @keyframes countdownShrink {
+        from { transform: scaleX(1); }
+        to   { transform: scaleX(0); }
+    }
+    #countdownText { display: none; }
+
+    .modal-success h5 {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        color: var(--text-primary);
+    }
+    .modal-success p {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-bottom: 1.5rem;
+        line-height: 1.6;
+    }
+    .modal-success .modal-btn-confirm { flex: unset; padding: 0.75rem 2.5rem; }
+
     /* ── Responsive ── */
     @media (max-width: 768px) {
         .page-header { padding: 5.5rem 0 2.5rem; }
@@ -1033,6 +1393,9 @@ include 'header.php';
         .product-thumb { width: 80px; height: 80px; }
         .summary-card { position: relative; top: auto; }
         .header-icon-wrap { display: none; }
+        .modal-actions { flex-direction: column; }
+        .modal-btn-cancel { flex: unset; }
+        .modal-btn-confirm { flex: unset; }
     }
 </style>
 
@@ -1087,14 +1450,163 @@ function addToCart(productId, quantity = 1) {
     });
 }
 
-function proceedToCheckout() {
+/* ══ Order Modal ══════════════════════════════════════════════════ */
+
+function openOrderModal() {
     if (document.querySelectorAll('.stock-alert').length > 0) {
         if (!confirm('Some items have stock issues. Proceed anyway?')) return;
     }
-    const btn = document.querySelector('.btn-checkout');
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+
+    // Populate mini summary
+    const mosItems = document.getElementById('mosItems');
+    mosItems.innerHTML = CART_ITEMS.map(item => `
+        <div class="mos-item">
+            <span class="mos-item-name">${escHtml(item.name)}</span>
+            <span class="mos-item-qty">×${item.quantity}</span>
+            <span class="mos-item-price">${item.currency} ${numFmt(item.item_total)}</span>
+        </div>
+    `).join('');
+
+    document.getElementById('mosTotal').textContent = CURRENCY + ' ' + numFmt(CART_TOTAL);
+
+    // Reset form
+    ['orderFullName','orderPhone','orderEmail'].forEach(id => {
+        document.getElementById(id).value = '';
+        document.getElementById(id).classList.remove('is-invalid');
+    });
+    ['nameError','phoneError','emailError'].forEach(id => {
+        document.getElementById(id).textContent = '';
+    });
+
+    // Show form step, hide success
+    document.getElementById('modalFormStep').style.display = '';
+    document.getElementById('modalSuccessStep').style.display = 'none';
+
+    document.getElementById('orderModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => document.getElementById('orderFullName').focus(), 300);
+}
+
+function closeOrderModal() {
+    document.getElementById('orderModal').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+function closeModalOnOverlay(e) {
+    if (e.target === document.getElementById('orderModal')) closeOrderModal();
+}
+
+// Close on Escape key
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeOrderModal();
+});
+
+function validateOrderForm() {
+    let valid = true;
+
+    const fullName = document.getElementById('orderFullName').value.trim();
+    const phone    = document.getElementById('orderPhone').value.trim();
+    const email    = document.getElementById('orderEmail').value.trim();
+
+    if (!fullName) {
+        setFieldError('orderFullName', 'nameError', 'Full name is required.');
+        valid = false;
+    } else { clearFieldError('orderFullName', 'nameError'); }
+
+    if (!phone) {
+        setFieldError('orderPhone', 'phoneError', 'Phone number is required.');
+        valid = false;
+    } else if (!/^[\d\s\+\-\(\)]{7,20}$/.test(phone)) {
+        setFieldError('orderPhone', 'phoneError', 'Please enter a valid phone number.');
+        valid = false;
+    } else { clearFieldError('orderPhone', 'phoneError'); }
+
+    if (!email) {
+        setFieldError('orderEmail', 'emailError', 'Email address is required.');
+        valid = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setFieldError('orderEmail', 'emailError', 'Please enter a valid email address.');
+        valid = false;
+    } else { clearFieldError('orderEmail', 'emailError'); }
+
+    return valid;
+}
+
+function setFieldError(inputId, errorId, msg) {
+    document.getElementById(inputId).classList.add('is-invalid');
+    document.getElementById(errorId).textContent = msg;
+}
+function clearFieldError(inputId, errorId) {
+    document.getElementById(inputId).classList.remove('is-invalid');
+    document.getElementById(errorId).textContent = '';
+}
+
+function confirmOrder() {
+    if (!validateOrderForm()) return;
+
+    const btn = document.getElementById('confirmOrderBtn');
     btn.disabled = true;
-    setTimeout(() => { window.location.href = 'checkout.php'; }, 900);
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Sending...';
+
+    const fullName = document.getElementById('orderFullName').value.trim();
+    const phone    = document.getElementById('orderPhone').value.trim();
+    const email    = document.getElementById('orderEmail').value.trim();
+
+    // Generate order number
+    const orderNumber = 'ORD-' + Date.now().toString(36).toUpperCase();
+
+    const payload = {
+        full_name:    fullName,
+        phone:        phone,
+        email:        email,
+        order_number: orderNumber,
+        cart_items:   CART_ITEMS,
+        subtotal:     CART_SUBTOTAL,
+        shipping:     SHIPPING_COST,
+        total:        CART_TOTAL,
+        currency:     CURRENCY
+    };
+
+    fetch('send_order_email.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('successOrderNumber').textContent = '#' + orderNumber;
+            document.getElementById('modalFormStep').style.display = 'none';
+            document.getElementById('modalSuccessStep').style.display = '';
+
+            // Start countdown and redirect to home page
+            let secs = 3;
+            document.getElementById('countdownNum').textContent = secs;
+            // Re-trigger the CSS animation by replacing the element
+            const fill = document.getElementById('countdownFill');
+            const clone = fill.cloneNode(true);
+            fill.parentNode.replaceChild(clone, fill);
+
+            const ticker = setInterval(() => {
+                secs--;
+                const el = document.getElementById('countdownNum');
+                if (el) el.textContent = secs;
+                if (secs <= 0) {
+                    clearInterval(ticker);
+                    window.location.href = 'index.php';
+                }
+            }, 1000);
+        } else {
+            showToast(data.message || 'Failed to place order. Please try again.', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm Order';
+        }
+    })
+    .catch(() => {
+        showToast('Network error. Please try again.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm Order';
+    });
 }
 
 function showToast(message, type = 'info') {
@@ -1110,6 +1622,16 @@ function showToast(message, type = 'info') {
         toast.classList.add('toast-out');
         setTimeout(() => toast.remove(), 250);
     }, 3500);
+}
+
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+function numFmt(n) {
+    return Number(n).toLocaleString();
 }
 
 document.addEventListener('DOMContentLoaded', function () {

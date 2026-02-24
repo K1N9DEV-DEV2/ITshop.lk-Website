@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
         $body .= "Sent from: https://itshop.lk/contact.php\n";
 
         if (mail($to, "IT Shop Contact: {$subject}", $body, $headers)) {
-            $success_msg = 'Message sent successfully! We\'ll get back to you within 24 hours. You can also reach us at <a href="https://webmail.itshop.lk" target="_blank" style="color:#065f46;font-weight:700;text-decoration:underline;">our webmail</a>.';
+            $success_msg = 'Message sent successfully!';
         } else {
             // Message still saved to DB even if mail fails
             $success_msg = 'Your message has been saved! We\'ll get back to you within 24 hours.';
@@ -334,8 +334,8 @@ include 'header.php';
             <div class="info-content">
                 <div class="info-label">Call / WhatsApp</div>
                 <div class="info-value">
-                    <a href="tel:+94XXXXXXXXX">+94 XX XXX XXXX</a><br>
-                    <a href="tel:+94XXXXXXXXX">+94 XX XXX XXXX</a>
+                    <a href="tel:+94701398275">+94 70 139 8275</a><br>
+                    <a href="tel:+94112078665">+94 112 078 665</a>
                 </div>
             </div>
         </div>
@@ -346,7 +346,6 @@ include 'header.php';
                 <div class="info-label">Email</div>
                 <div class="info-value">
                     <a href="mailto:info@itshop.lk">info@itshop.lk</a><br>
-                    <a href="mailto:admin@itshop.lk">admin@itshop.lk</a>
                 </div>
             </div>
         </div>
@@ -356,9 +355,7 @@ include 'header.php';
             <div class="info-content">
                 <div class="info-label">Opening Hours</div>
                 <div class="info-value">
-                    Mon – Fri: 9:00 AM – 6:00 PM<br>
-                    Sat: 9:00 AM – 4:00 PM<br>
-                    Sun: Closed
+                    Mon – Fri: 8:00 AM – 5:30 PM<br>
                 </div>
             </div>
         </div>

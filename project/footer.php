@@ -33,7 +33,6 @@
                     <ul>
                         <li><a href="index.php">Home</a></li>
                         <li><a href="products.php">Products</a></li>
-                        <li><a href="rapidventure.php">Rapidventure</a></li>
                         <li><a href="contact.php">Contact</a></li>
                     </ul>
                 </div>
@@ -57,15 +56,11 @@
                     <ul class="sf-contact">
                         <li>
                             <span class="sf-icon"><i class="fas fa-phone"></i></span>
-                            <a href="tel:+94779005652">+94 77 900 5652</a>
+                            <a href="tel:+94779005652">+94 70 139 8275</a>
                         </li>
                         <li>
                             <span class="sf-icon"><i class="fas fa-envelope"></i></span>
                             <a href="mailto:info@itshop.lk">info@itshop.lk</a>
-                        </li>
-                        <li>
-                            <span class="sf-icon"><i class="fas fa-envelope"></i></span>
-                            <a href="mailto:admin@itshop.lk">admin@itshop.lk</a>
                         </li>
                     </ul>
                 </div>

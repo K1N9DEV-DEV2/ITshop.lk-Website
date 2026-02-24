@@ -17,7 +17,7 @@ $cart_items    = [];
 $cart_total    = 0;
 $cart_count    = 0;
 $subtotal      = 0;
-$shipping_cost = 500;
+$shipping_cost = 0;
 
 // Handle cart actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

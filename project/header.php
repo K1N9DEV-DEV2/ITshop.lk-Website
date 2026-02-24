@@ -292,7 +292,7 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
                             ['Processors',             'products.php?category=processors'],
                             ['Motherboard','products.php?category=motherboards'],
                             ['Coolers',   'products.php?category=coolers'],
-                            ['Memory(RAM)',      'products.php?category=memory'],
+                            ['Memory (RAM)',      'products.php?category=memory'],
                             ['SSD','products.php?category=storage'],
                             ['Storage',            'products.php?category=storage'],
                             ['Graphic Cards',        'products.php?category=graphics'],
@@ -318,7 +318,8 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
                             ['UPS',             'products.php?category=ups'],
                             ['Monitors','products.php?category=monitors'],
                             ['Headsets',   'products.php?category=headsets'],
-                            ['Keyboards &amp; Mouse','products.php?category=keyboards-mice'],
+                            ['Keyboards','products.php?category=keyboards'],
+                            ['Mouse','products.php?category=mouse'],
                             ['Speakers',            'products.php?category=speakers'],
                             ['Cables',        'products.php?category=cables'],
                             ['Adapters',           'products.php?category=adapters'],
@@ -332,9 +333,6 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
                     </ul>
                 </li>
 
-                <li class="nav-item">
-                    <a class="nav-link <?= ($cur_page==='rapidventure.php'?'active':'') ?>" href="rapidventure.php">Rapidventure</a>
-                </li>
                 <li class="nav-item">
                     <a class="nav-link <?= ($cur_page==='contact.php'?'active':'') ?>" href="contact.php">Contact</a>
                 </li>

@@ -3,7 +3,7 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-$page_title = 'IT Shop.LK - Best Computer Store';
+$page_title = 'IT Shop.LK - the Best Computer Store';
 include 'header.php';
 ?>
 
@@ -390,7 +390,7 @@ include 'header.php';
 <section class="hero">
     <div class="hero-grid"></div>
     <div class="hero-inner">
-        <div class="hero-pill"><span></span>Sri Lanka Best Computer Store</div>
+        <div class="hero-pill"><span></span>SRI LANKA THE BEST COMPUTER STORE</div>
         <h1 class="hero-title">Power up with <em> IT Shop.LK</em></h1>
         <p class="hero-sub">Laptops, PCs, RAM, GPUs, peripherals &amp; premium audio — everything you need to build, play, or create.</p>
         <div class="hero-actions">

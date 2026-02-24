@@ -8,9 +8,6 @@ $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) { header('Location: products.php'); exit; }
 
 // ── Bootstrap: sets $pdo via header.php (same pattern as products.php) ───────
-// We set a temporary page title; it gets overwritten once we have the product name.
-// page_title will be updated below after we know the product name, but
-// header.php needs it now — we'll use a generic fallback.
 $page_title = 'Product Details – IT Shop.LK';
 include 'header.php';
 
@@ -149,7 +146,7 @@ try {
         padding:4px 12px;
     }
 
-    /* thumbs row (optional extra images – shown only if you add them) */
+    /* thumbs row */
     .img-thumbs { display:flex; gap:8px; flex-wrap:wrap; }
     .img-thumb {
         width:64px; height:64px;
@@ -203,9 +200,10 @@ try {
     /* Stock status */
     .det-stock {
         display:inline-flex; align-items:center; gap:6px;
-        padding:.45rem 1rem; border-radius:var(--r-full);
+        padding:.38rem .9rem; border-radius:var(--r-full);
         font-size:.82rem; font-weight:700;
         margin-bottom:1.1rem;
+        width:fit-content;
     }
     .st-in  { background:rgba(16,185,129,.1);  color:#059669; border:1px solid rgba(16,185,129,.2); }
     .st-out { background:rgba(220,38,38,.08);   color:#dc2626; border:1px solid rgba(220,38,38,.15); }
@@ -216,9 +214,9 @@ try {
     .qty-row { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; }
     .qty-label { font-size:.82rem; font-weight:700; color:var(--ink-2); }
     .qty-ctrl {
-        display:flex; align-items:center; gap:0;
+        display:inline-flex; align-items:center; gap:0;
         border:1px solid rgba(0,0,0,.1); border-radius:var(--r-md);
-        overflow:hidden;
+        overflow:hidden; width:fit-content;
     }
     .qty-btn {
         width:36px; height:36px;
@@ -242,32 +240,21 @@ try {
     /* CTA buttons */
     .det-actions { display:flex; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
     .btn-det-cart {
-        flex:1; min-width:160px;
-        display:flex; align-items:center; justify-content:center; gap:8px;
-        padding:.75rem 1.5rem;
+        display:inline-flex; align-items:center; justify-content:center; gap:8px;
+        padding:.72rem 2rem;
         background:var(--accent); color:#fff;
         border:none; border-radius:var(--r-md); cursor:pointer;
         font-family:'Red Hat Display',sans-serif; font-size:.92rem; font-weight:700;
-        box-shadow:0 4px 18px rgba(79,70,229,.3);
+        box-shadow:0 4px 14px rgba(79,70,229,.25);
         transition:background .15s, transform .15s, box-shadow .15s;
+        width:auto;
     }
     .btn-det-cart:hover:not(:disabled) {
         background:var(--accent-dark);
         transform:translateY(-2px);
-        box-shadow:0 6px 24px rgba(79,70,229,.4);
+        box-shadow:0 6px 20px rgba(79,70,229,.35);
     }
-    .btn-det-cart:disabled { background:var(--surface); color: #fff; box-shadow:none; cursor:not-allowed; border:1px solid rgba(0,0,0,.08); }
-
-    .btn-det-wish {
-        width:48px; height:48px;
-        display:flex; align-items:center; justify-content:center;
-        border:1px solid rgba(0,0,0,.1); border-radius:var(--r-md);
-        background:var(--white); color:var(--ink-3); cursor:pointer;
-        font-size:.9rem;
-        transition:background .15s, color .15s, border-color .15s;
-    }
-    .btn-det-wish:hover { background:#fee2e2; color:#dc2626; border-color:#fca5a5; }
-    .btn-det-wish.active { background:#fee2e2; color:#dc2626; border-color:#fca5a5; }
+    .btn-det-cart:disabled { background:#ccc; color:#fff; box-shadow:none; cursor:not-allowed; border:1px solid rgba(0,0,0,.08); }
 
     /* Meta chips */
     .det-meta { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.9rem; }
@@ -327,7 +314,6 @@ try {
     }
     .section-heading span { color:var(--accent); }
 
-    /* reuse col-5th from products.php */
     .col-5th {
         flex: 0 0 20%; max-width: 20%;
         padding-left: 10px; padding-right: 10px;
@@ -395,7 +381,7 @@ try {
     .btn-cart:hover:not(:disabled) { background:var(--accent-dark); transform:translateY(-1px); box-shadow:0 4px 16px rgba(79,70,229,.38); }
     .btn-cart:disabled { background:var(--surface); color:var(--ink-3); box-shadow:none; cursor:not-allowed; border:1px solid rgba(0,0,0,.08); }
 
-    /* ══════════════ TOAST (same as products.php) ══════════════ */
+    /* ══════════════ TOAST ══════════════ */
     .it-toast {
         position:fixed; top:90px; right:20px; z-index:9999;
         display:flex; align-items:flex-start; gap:10px;
@@ -452,7 +438,11 @@ try {
                 <div class="col-lg-5 col-md-6">
                     <div class="img-panel">
                         <div class="main-img-wrap" id="mainImgWrap">
-                            <?php $img = ltrim($product['image'], '/'); ?>
+                            <?php
+                        // Admin stores image as "uploads/products/filename.ext" relative to /admin/
+                        // From public root that becomes "admin/uploads/products/filename.ext"
+                        $img = 'admin/' . ltrim($product['image'], '/');
+                        ?>
                             <img src="<?php echo htmlspecialchars($img); ?>"
                                  alt="<?php echo htmlspecialchars($product['name']); ?>"
                                  id="mainImg"
@@ -466,7 +456,7 @@ try {
                                 <span class="oos-ribbon">Out of Stock</span>
                             <?php endif; ?>
                         </div>
-                        <!-- Thumb row – main image as first thumb; extend if you store multiple images -->
+                        <!-- Thumb row -->
                         <div class="img-thumbs">
                             <div class="img-thumb active" onclick="switchImg('<?php echo htmlspecialchars($img); ?>', this)">
                                 <img src="<?php echo htmlspecialchars($img); ?>" alt="thumb">
@@ -517,9 +507,7 @@ try {
                         <?php elseif ($product['stock_count'] <= 5): ?>
                             <span class="det-stock st-low"><i class="fas fa-fire"></i> Only <?= $product['stock_count'] ?> left!</span>
                         <?php else: ?>
-                            <span class="det-stock st-in"><i class="fas fa-circle-check"></i> In Stock
-                                <span style="font-weight:500;color:#047857">&nbsp;(<?= $product['stock_count'] ?> available)</span>
-                            </span>
+                            <span class="det-stock st-in"><i class="fas fa-circle-check"></i> In Stock</span>
                         <?php endif; ?>
 
                         <!-- Quantity + CTA -->
@@ -545,12 +533,6 @@ try {
                                 <i class="fas fa-ban"></i> Unavailable
                             </button>
                             <?php endif; ?>
-
-                            <button class="btn-det-wish" id="wishBtn"
-                                    onclick="toggleWishlist(<?= $product['id'] ?>, this)"
-                                    title="Add to wishlist">
-                                <i class="far fa-heart"></i>
-                            </button>
                         </div>
 
                         <!-- Meta chips -->
@@ -581,7 +563,7 @@ try {
                 <?php if (!empty($product['description'])): ?>
                 <button class="tab-btn" onclick="switchTab('desc', this)">Description</button>
                 <?php endif; ?>
-                <button class="tab-btn" onclick="switchTab('ship', this)">Shipping & Returns</button>
+                <!--<button class="tab-btn" onclick="switchTab('ship', this)">Shipping & Returns</button>-->
             </div>
 
             <!-- Specifications tab -->
@@ -596,7 +578,6 @@ try {
                                 <td><?php echo htmlspecialchars($val); ?></td>
                             </tr>
                         <?php endforeach; ?>
-                        <!-- Always show brand & category if not already in specs -->
                         <?php if (!isset($specs['Brand']) && $product['brand']): ?>
                             <tr><td>Brand</td><td><?php echo htmlspecialchars($product['brand']); ?></td></tr>
                         <?php endif; ?>
@@ -641,7 +622,7 @@ try {
             <h2 class="section-heading">Related <span>Products</span></h2>
             <div class="row g-3" id="relatedGrid" style="margin-left:-10px;margin-right:-10px;">
                 <?php foreach ($related as $rel):
-                    $rImg  = ltrim($rel['image'], '/');
+                    $rImg  = 'admin/' . ltrim($rel['image'], '/');
                     $rDisc = ($rel['original_price'] > $rel['price'])
                         ? round((($rel['original_price'] - $rel['price']) / $rel['original_price']) * 100) : 0;
                 ?>
@@ -794,13 +775,6 @@ function addToCart(productId) {
         showToast('Network error – please try again', 'e');
         btn.innerHTML = orig; btn.disabled = false;
     });
-}
-
-/* ── Wishlist toggle (UI only – wire up your own endpoint) ── */
-function toggleWishlist(productId, btn) {
-    const active = btn.classList.toggle('active');
-    btn.innerHTML = active ? '<i class="fas fa-heart"></i>' : '<i class="far fa-heart"></i>';
-    showToast(active ? 'Added to wishlist' : 'Removed from wishlist', active ? 's' : 'i');
 }
 
 /* ── Cart UI updater ── */

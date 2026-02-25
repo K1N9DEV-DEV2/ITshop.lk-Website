@@ -56,7 +56,7 @@
                     <ul class="sf-contact">
                         <li>
                             <span class="sf-icon"><i class="fas fa-phone"></i></span>
-                            <a href="tel:+94779005652">+94 70 139 8275</a>
+                            <a href="tel:+94779005652">+94 xx xxx xxxx</a>
                         </li>
                         <li>
                             <span class="sf-icon"><i class="fas fa-envelope"></i></span>

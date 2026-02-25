@@ -4,10 +4,17 @@
  *  AD POPUP SNIPPET  –  paste this into your index.php
  *  PLACEMENT: right after include 'header.php';
  *
- *  Also copy  2nd_repair_post_3.png  into your project root
- *  (same folder as index.php)
+ *  Add your images to the $adImages array below.
+ *  Copy all images into your uploads/ folder.
  * ─────────────────────────────────────────────────────────────
  */
+
+// ★ ADD YOUR IMAGES HERE ★
+$adImages = [
+    ['src' => 'uploads/2nd_repair_post_3.png', 'alt' => 'Expert IT Repairs – Rapidventure Sri Lanka'],
+    ['src' => 'uploads/6.png', 'alt' => 'Phone & Laptop Repairs – Rapidventure Sri Lanka'],
+    ['src' => 'uploads/bitdefender_post.png', 'alt' => 'Fast Service – Rapidventure Sri Lanka'],
+];
 ?>
 
 <style>
@@ -50,16 +57,54 @@
     transform: translateY(0) scale(1);
 }
 
-/* ── The ad image ─────────────────────────────────────── */
-#ad-popup .ad-post-img {
+/* ── Carousel wrapper ─────────────────────────────────── */
+.ad-carousel {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+.ad-carousel-track {
+    display: flex;
+    transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+}
+.ad-carousel-track .ad-post-img {
     display: block;
     width: 100%;
+    flex-shrink: 0;
     height: auto;
     pointer-events: none;
     user-select: none;
 }
 
-/* ── Close × button ───────────────────────────────────── */
+
+
+/* ── Dot indicators ───────────────────────────────────── */
+.ad-dots {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    z-index: 8;
+}
+.ad-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.45);
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+.ad-dot.active {
+    background: #fff;
+    transform: scale(1.3);
+}
+
+/* ── Close × button (always visible, no timer) ────────── */
 #ad-close-btn {
     position: absolute;
     top: 12px;
@@ -78,13 +123,7 @@
     cursor: pointer;
     backdrop-filter: blur(6px);
     transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
-    opacity: 0;
-    pointer-events: none;
-}
-#ad-close-btn.ready {
-    opacity: 1;
-    pointer-events: auto;
-    animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) 0.9s both;
 }
 @keyframes popIn {
     from { opacity: 0; transform: scale(0.5); }
@@ -95,40 +134,6 @@
     border-color: rgba(255,255,255,0.6);
     transform: scale(1.1) rotate(90deg);
 }
-
-/* Spinning countdown ring around close button */
-#ad-close-btn .countdown-ring {
-    position: absolute;
-    inset: -3px;
-    border-radius: 50%;
-    border: 3px solid transparent;
-    border-top-color: #0cb100;
-    border-right-color: #0cb100;
-    animation: ringCountdown 5s linear forwards;
-    pointer-events: none;
-}
-@keyframes ringCountdown {
-    0%   { transform: rotate(0deg);   opacity: 1; }
-    100% { transform: rotate(360deg); opacity: 0; }
-}
-
-/* ── "Close in Xs" label ──────────────────────────────── */
-.ad-skip-label {
-    position: absolute;
-    top: 16px;
-    left: 14px;
-    background: rgba(0,0,0,0.55);
-    color: rgba(255,255,255,0.85);
-    font-family: 'Red Hat Display', sans-serif;
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 100px;
-    backdrop-filter: blur(4px);
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-}
-.ad-skip-label.hidden { opacity: 0; }
 
 /* ── Bottom CTA strip ─────────────────────────────────── */
 .ad-strip {
@@ -169,6 +174,7 @@
 @media (max-width: 520px) {
     #ad-popup { max-width: 95vw; border-radius: 16px; }
     .ad-strip { font-size: 0.85rem; padding: 11px 16px; }
+
 }
 </style>
 
@@ -176,86 +182,116 @@
 <div id="ad-popup-overlay" role="dialog" aria-modal="true" aria-label="Advertisement">
     <div id="ad-popup">
 
-        <!-- ✕ Close button (unlocks after 5 seconds) -->
+        <!-- ✕ Close button (immediately available, no timer) -->
         <button id="ad-close-btn" aria-label="Close advertisement">
-            <div class="countdown-ring"></div>
             <i class="fas fa-times"></i>
         </button>
 
-        <!-- Countdown label (top-left) -->
-        <div class="ad-skip-label" id="ad-skip-label">Close in 5s</div>
+        <!-- ── Image Carousel ── -->
+        <div class="ad-carousel">
+            <div class="ad-carousel-track" id="ad-track">
+                <?php foreach ($adImages as $img): ?>
+                <img
+                    class="ad-post-img"
+                    src="<?= htmlspecialchars($img['src']) ?>"
+                    alt="<?= htmlspecialchars($img['alt']) ?>"
+                    loading="lazy"
+                />
+                <?php endforeach; ?>
+            </div>
 
-        <!-- ★ YOUR FACEBOOK POST IMAGE ★ -->
-        <img
-            class="ad-post-img"
-            src="uploads/2nd_repair_post_3.png"
-            alt="Expert IT Repairs – Rapidventure Sri Lanka"
-        />
+            <!-- Dot indicators -->
+            <?php if (count($adImages) > 1): ?>
+            <div class="ad-dots" id="ad-dots">
+                <?php foreach ($adImages as $i => $img): ?>
+                <button
+                    class="ad-dot <?= $i === 0 ? 'active' : '' ?>"
+                    data-index="<?= $i ?>"
+                    aria-label="Go to image <?= $i + 1 ?>"
+                ></button>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
 
-        <!-- Bottom click-to-call strip -->
+        <!-- Bottom click-to-call strip
         <a href="tel:+94718508203" class="ad-strip">
             <i class="fas fa-phone-alt"></i>
             Contact Us Now &nbsp;·&nbsp; +94 71 850 8203
-        </a>
+        </a>-->
 
     </div>
 </div>
 
 <script>
 (function () {
-    const overlay   = document.getElementById('ad-popup-overlay');
-    const closeBtn  = document.getElementById('ad-close-btn');
-    const skipLabel = document.getElementById('ad-skip-label');
+    const overlay  = document.getElementById('ad-popup-overlay');
+    const closeBtn = document.getElementById('ad-close-btn');
+    const track    = document.getElementById('ad-track');
+    const dots     = document.querySelectorAll('.ad-dot');
+    const DELAY      = 800;   // ms after page load before showing
+    const AUTO_DELAY = 4000;  // ms between auto-advances
 
-    const COUNTDOWN = 5;    // seconds before ✕ unlocks
-    const DELAY     = 800;  // ms after page load before showing
+    const total = dots.length || 0;
+    let current = 0;
+    let autoTimer;
 
-    let count = COUNTDOWN;
-    let ticker;
-
-    /* Show popup */
+    /* ── Show popup ── */
     function showPopup() {
         overlay.classList.add('show');
         document.body.style.overflow = 'hidden';
-        startCountdown();
+        if (total > 1) startAuto();
     }
 
-    /* Countdown ticker */
-    function startCountdown() {
-        ticker = setInterval(() => {
-            count--;
-            if (count > 0) {
-                skipLabel.textContent = `Close in ${count}s`;
-            } else {
-                clearInterval(ticker);
-                skipLabel.classList.add('hidden');
-                closeBtn.classList.add('ready'); // ✕ appears
-            }
-        }, 1000);
-    }
-
-    /* Close popup */
+    /* ── Close popup ── */
     function closePopup() {
-        if (count > 0) return; // locked during countdown
-        clearInterval(ticker);
+        clearInterval(autoTimer);
         overlay.classList.add('hide');
         document.body.style.overflow = '';
         overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
     }
 
+    /* ── Go to slide ── */
+    function goTo(index) {
+        current = (index + total) % total;
+        track.style.transform = `translateX(-${current * 100}%)`;
+        dots.forEach((d, i) => d.classList.toggle('active', i === current));
+    }
+
+    /* ── Auto-advance ── */
+    function startAuto() {
+        autoTimer = setInterval(() => goTo(current + 1), AUTO_DELAY);
+    }
+    function resetAuto() {
+        clearInterval(autoTimer);
+        startAuto();
+    }
+
+    /* ── Dot buttons ── */
+    dots.forEach(dot => dot.addEventListener('click', () => {
+        goTo(parseInt(dot.dataset.index));
+        resetAuto();
+    }));
+
+    /* ── Touch / swipe support ── */
+    let touchStartX = 0;
+    track.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+    track.addEventListener('touchend', e => {
+        const diff = touchStartX - e.changedTouches[0].clientX;
+        if (Math.abs(diff) > 40) {
+            goTo(diff > 0 ? current + 1 : current - 1);
+            resetAuto();
+        }
+    }, { passive: true });
+
+    /* ── Event listeners ── */
     closeBtn.addEventListener('click', closePopup);
-
-    // Click backdrop to close (after countdown)
-    overlay.addEventListener('click', e => {
-        if (e.target === overlay) closePopup();
-    });
-
-    // Escape key
+    overlay.addEventListener('click', e => { if (e.target === overlay) closePopup(); });
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') closePopup();
     });
 
-    // Fire after page fully loads
+    /* ── Fire after page loads ── */
     window.addEventListener('load', () => setTimeout(showPopup, DELAY));
 })();
 </script>

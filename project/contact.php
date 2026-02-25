@@ -334,8 +334,8 @@ include 'header.php';
             <div class="info-content">
                 <div class="info-label">Call / WhatsApp</div>
                 <div class="info-value">
-                    <a href="tel:+94701398275">+94 70 139 8275</a><br>
-                    <a href="tel:+94112078665">+94 112 078 665</a>
+                    <a href="tel:+94701398275">+94 xx xxx xxxx</a><br>
+                    <a href="tel:+94112078665">+94 xxx xxx xxx</a>
                 </div>
             </div>
         </div>

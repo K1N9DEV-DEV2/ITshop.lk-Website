@@ -155,8 +155,6 @@
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.09);
             border: 1px solid rgba(255,255,255,.07);
-            color: #6666888;
-            color: #7777992;
             color: rgba(255, 255, 255, 0.6);
             display: flex; align-items: center; justify-content: center;
             font-size: .82rem;
@@ -258,18 +256,19 @@
         }
     </style>
 
-    <!-- Bootstrap JS -->
+    <!-- Bootstrap JS loaded ONCE here (removed from header.php) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
 
     <script>
-    document.querySelectorAll('a[href^="#"]').forEach(a => {
-        a.addEventListener('click', e => {
-        const href = a.getAttribute('href');
-        if (!href || href === '#') return;
-        const t = document.querySelector(href);
-        if (t) { e.preventDefault(); t.scrollIntoView({ behavior: 'smooth' }); }
-    });
-});
+        // FIX: skip bare '#' hrefs — querySelector('#') throws a DOMException
+        document.querySelectorAll('a[href^="#"]').forEach(a => {
+            a.addEventListener('click', e => {
+                const href = a.getAttribute('href');
+                if (!href || href === '#') return; // bail out on empty anchors
+                const t = document.querySelector(href);
+                if (t) { e.preventDefault(); t.scrollIntoView({ behavior: 'smooth' }); }
+            });
+        });
     </script>
 
     <?php if (!empty($extra_scripts)) echo $extra_scripts; ?>

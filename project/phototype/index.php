@@ -5,6 +5,8 @@ error_reporting(E_ALL);
 
 $page_title = 'IT Shop.LK - the Best Computer Store';
 include 'header.php';
+
+include 'popup.php';
 ?>
 
 <style>
@@ -65,7 +67,6 @@ include 'header.php';
         transform: scale(1);
     }
 
-    /* Dark overlay per slide */
     .hero-slide::after {
         content: '';
         position: absolute;
@@ -78,17 +79,11 @@ include 'header.php';
         );
     }
 
-    /*
-     * SLIDE IMAGES
-     * Replace these URLs with your own product/store images.
-     * Recommended size: 1800×900px or wider, JPG/WebP.
-     */
     .hero-slide:nth-child(1) { background-image: url('https://images.unsplash.com/photo-1593640408182-31c228b41d42?w=1800&q=80'); }
     .hero-slide:nth-child(2) { background-image: url('https://images.unsplash.com/photo-1587202372634-32705e3bf49c?w=1800&q=80'); }
     .hero-slide:nth-child(3) { background-image: url('https://images.unsplash.com/photo-1616400619175-5beda3a17896?w=1800&q=80'); }
     .hero-slide:nth-child(4) { background-image: url('https://images.unsplash.com/photo-1555487505-8603a1a69755?w=1800&q=80'); }
 
-    /* Ambient grid overlay */
     .hero-grid {
         position: absolute;
         inset: 0;
@@ -100,7 +95,6 @@ include 'header.php';
         pointer-events: none;
     }
 
-    /* Green glow blob */
     .hero-glow {
         position: absolute;
         z-index: 1;
@@ -215,7 +209,7 @@ include 'header.php';
     }
     .slider-dot:hover:not(.active) { background: rgba(255,255,255,0.65); }
 
-    /* Prev / Next arrows */
+    /* Arrow buttons 
     .slider-arrow {
         position: absolute;
         top: 50%;
@@ -233,7 +227,6 @@ include 'header.php';
         color: #fff;
         font-size: 1rem;
         transition: all 0.25s ease;
-        text-decoration: none;
     }
     .slider-arrow:hover {
         background: var(--accent);
@@ -244,7 +237,6 @@ include 'header.php';
     .slider-arrow-prev { left: 1.5rem; }
     .slider-arrow-next { right: 1.5rem; }
 
-    /* Auto-advance progress bar */
     .slider-progress {
         position: absolute;
         bottom: 0; left: 0;
@@ -256,7 +248,6 @@ include 'header.php';
         transition: width linear;
     }
 
-    /* Slide caption (bottom-right) */
     .slide-caption {
         position: absolute;
         bottom: 3.5rem;
@@ -278,7 +269,7 @@ include 'header.php';
         text-align: left;
     }
     .slide-caption.visible { opacity: 1; transform: translateY(0); }
-    .slide-caption strong { display: block; color: #fff; font-size: 0.85rem; margin-bottom: 2px; }
+    .slide-caption strong { display: block; color: #fff; font-size: 0.85rem; margin-bottom: 2px; }*/
 
     /* ── BUTTONS ──────────────────────────────────────────── */
     .btn-primary-custom {
@@ -350,7 +341,6 @@ include 'header.php';
 
 <!-- HERO SLIDER -->
 <section class="hero">
-    <!-- Background slides -->
     <div class="hero-slides">
         <div class="hero-slide active"></div>
         <div class="hero-slide"></div>
@@ -361,18 +351,7 @@ include 'header.php';
     <div class="hero-grid"></div>
     <div class="hero-glow"></div>
 
-    <!-- Centre content (stays fixed across all slides) -->
-    <div class="hero-inner">
-        <div class="hero-pill"><span></span>SRI LANKA'S BEST COMPUTER STORE</div>
-        <h1 class="hero-title">Power up with <em>IT Shop.LK</em></h1>
-        <p class="hero-sub">Laptops, PCs, RAM, GPUs, peripherals &amp; premium audio — everything you need to build, play, or create.</p>
-        <div class="hero-actions">
-            <a href="products.php" class="btn-primary-custom"><i class="fas fa-shopping-bag"></i> Shop Now</a>
-            <a href="contact.php" class="btn-ghost"><i class="fas fa-phone"></i> Contact Us</a>
-        </div>
-    </div>
-
-    <!-- Prev / Next arrows -->
+    <!-- Arrow buttons (now properly shown) -->
     <button class="slider-arrow slider-arrow-prev" aria-label="Previous slide">
         <i class="fas fa-chevron-left"></i>
     </button>
@@ -388,12 +367,10 @@ include 'header.php';
         <button class="slider-dot" aria-label="Slide 4"></button>
     </div>
 
-    <!-- Slide caption badge (bottom-right) -->
     <div class="slide-caption visible" id="slide-caption">
         <strong>Gaming Laptops</strong>High-performance machines for serious gamers
     </div>
 
-    <!-- Auto-advance progress bar (bottom edge) -->
     <div class="slider-progress" id="slider-progress"></div>
 </section>
 
@@ -442,7 +419,6 @@ $extra_scripts = <<<'JS'
     const caption  = document.getElementById('slide-caption');
     const progress = document.getElementById('slider-progress');
 
-    // ── Customise captions for each slide ───────────────────
     const CAPTIONS = [
         { title: 'Gaming Laptops',       sub: 'High-performance machines for serious gamers' },
         { title: 'Desktop Workstations', sub: 'Build the ultimate powerhouse setup' },
@@ -450,7 +426,7 @@ $extra_scripts = <<<'JS'
         { title: 'Audio & Peripherals',  sub: 'Complete your setup with pro-grade gear' },
     ];
 
-    const INTERVAL = 5000; // ms per slide
+    const INTERVAL = 5000;
     let current = 0;
     let timer;
 
@@ -485,9 +461,11 @@ $extra_scripts = <<<'JS'
         resetProgress();
     }
 
-    // Arrow buttons
-    document.querySelector('.slider-arrow-prev').addEventListener('click', () => { goTo(current - 1); startAuto(); });
-    document.querySelector('.slider-arrow-next').addEventListener('click', () => { goTo(current + 1); startAuto(); });
+    // Arrow buttons — safely grab with null check
+    const prevBtn = document.querySelector('.slider-arrow-prev');
+    const nextBtn = document.querySelector('.slider-arrow-next');
+    if (prevBtn) prevBtn.addEventListener('click', () => { goTo(current - 1); startAuto(); });
+    if (nextBtn) nextBtn.addEventListener('click', () => { goTo(current + 1); startAuto(); });
 
     // Dot buttons
     dots.forEach((dot, i) => dot.addEventListener('click', () => { goTo(i); startAuto(); }));

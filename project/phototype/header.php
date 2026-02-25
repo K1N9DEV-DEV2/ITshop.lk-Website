@@ -1,9 +1,8 @@
-
 <?php
 // header.php - Reusable header/navbar for IT Shop.LK
 
 if (session_status() === PHP_SESSION_NONE) session_start();
-if (!isset($pdo)) include __DIR__ . '../db.php';
+if (!isset($pdo)) include __DIR__ . '/db.php';
 
 $cart_count    = 0;
 $user_currency = 'LKR';
@@ -38,6 +37,9 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
     <style>
         /* ═══════════════ TOKENS ═══════════════ */
         :root {
+            --navbar-h:   62px;
+            --ticker-h:   34px;
+
             --accent:         #0cb100;
             --accent-dark:    #087600;
             --accent-soft:    #f6f7ffb4;
@@ -53,8 +55,12 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             --r-full: 999px;
             --shadow-drop: 0 8px 32px rgba(13,13,20,.12);
 
-            --navbar-h: 66px;
-            --ticker-h: 40px;
+            /* legacy compat */
+            --primary-color:   #0a00cc;
+            --secondary-color: #10b981;
+            --text-dark:       #0d0d14;
+            --text-light:      #3f523c;
+            --bg-light:        #f5f5f8;
         }
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -63,10 +69,12 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             color: var(--ink);
             line-height: 1.6;
             -webkit-font-smoothing: antialiased;
-            padding-top: var(--navbar-h);
-        }
-        body.ticker-visible {
+            /* Push content below navbar + ticker */
             padding-top: calc(var(--navbar-h) + var(--ticker-h));
+        }
+        /* When ticker is hidden, only account for navbar */
+        body:not(.ticker-visible) {
+            padding-top: var(--navbar-h);
         }
 
         /* ═══════════════ NAVBAR ═══════════════ */
@@ -76,9 +84,8 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             -webkit-backdrop-filter: blur(20px) saturate(180%);
             border-bottom: 1px solid rgba(0,0,0,.06);
             padding: .6rem 0;
-            top: 0;
-            transition: background .3s, box-shadow .3s;
             height: var(--navbar-h);
+            transition: background .3s, box-shadow .3s;
         }
         .navbar.is-scrolled {
             background: rgba(255,255,255,.97);
@@ -338,7 +345,7 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
         .navbar-toggler { border: 1px solid rgba(0,0,0,.1); border-radius: var(--r-sm); padding: 6px 10px; }
         .navbar-toggler:focus { box-shadow: none; }
 
-        /* ═══════════════ TICKER — NOW BELOW NAVBAR ═══════════════ */
+        /* ═══════════════ TICKER — BELOW NAVBAR ═══════════════ */
         .ticker-bar {
             background: #3b5bdb;
             color: #fff;
@@ -350,11 +357,10 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             align-items: center;
             overflow: hidden;
             position: fixed;
-            top: var(--navbar-h);
+            top: var(--navbar-h);   /* sits directly below the navbar */
             left: 0;
             right: 0;
             z-index: 1029;
-            transition: top .3s;
         }
 
         .ticker-bar .ticker-label {
@@ -435,7 +441,6 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
 </head>
 <body class="ticker-visible">
 
-<!-- ═══════════════ NAVBAR ═══════════════ -->
 <nav class="navbar navbar-expand-lg fixed-top" id="mainNav">
     <div class="container">
 
@@ -454,11 +459,12 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             <!-- Centre links -->
             <ul class="navbar-nav mx-auto gap-1">
                 <li class="nav-item">
-                    <a class="nav-link <?= ($cur_page==='index.php'?'active':'') ?>" href="index.php">Home</a>
+                    <a class="nav-link <?= ($cur_page==='index.php' ? 'active' : '') ?>" href="index.php">Home</a>
                 </li>
 
+                <!-- ── Products dropdown ── -->
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?= ($cur_page==='products.php'?'active':'') ?>"
+                    <a class="nav-link dropdown-toggle <?= ($cur_page==='products.php' ? 'active' : '') ?>"
                        href="#" id="prodDrop" role="button"
                        data-bs-toggle="dropdown" aria-expanded="false">Products</a>
                     <ul class="dropdown-menu" aria-labelledby="prodDrop">
@@ -470,61 +476,57 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
                         <li><hr class="dropdown-divider"></li>
                         <?php
                         $navCats = [
-                            ['Processors',   'products.php?category=processors'],
-                            ['Motherboard',  'products.php?category=motherboards'],
-                            ['Coolers',      'products.php?category=coolers'],
-                            ['Memory (RAM)', 'products.php?category=memory'],
-                            ['SSD',          'products.php?category=storage'],
-                            ['Storage',      'products.php?category=storage'],
-                            ['Graphic Cards','products.php?category=graphics'],
-                            ['Power Supply', 'products.php?category=power'],
-                            ['Pc Cases',     'products.php?category=cases'],
-                            ['Laptops',      'products.php?category=laptops'],
-                            ['Desktops',     'products.php?category=desktops'],
+                            ['Processors',    'products.php?category=processors'],
+                            ['Motherboard',   'products.php?category=motherboards'],
+                            ['Coolers',       'products.php?category=coolers'],
+                            ['Memory (RAM)',  'products.php?category=memory'],
+                            ['SSD',           'products.php?category=storage'],
+                            ['Storage',       'products.php?category=storage'],
+                            ['Graphic Cards', 'products.php?category=graphics'],
+                            ['Power Supply',  'products.php?category=power'],
+                            ['PC Cases',      'products.php?category=cases'],
+                            ['Laptops',       'products.php?category=laptops'],
+                            ['Desktops',      'products.php?category=desktops'],
                         ];
                         foreach ($navCats as [$label, $url]): ?>
-                        <li><a class="dropdown-item" href="<?= $url ?>"><?= $label ?></a></li>
+                            <li><a class="dropdown-item" href="<?= $url ?>"><?= $label ?></a></li>
                         <?php endforeach; ?>
                     </ul>
                 </li>
 
+                <!-- ── Accessories dropdown (fixed: unique id) ── -->
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle"
-                       href="#" role="button"
+                       href="#" id="accDrop" role="button"
                        data-bs-toggle="dropdown" aria-expanded="false">Accessories</a>
-                    <ul class="dropdown-menu">
+                    <ul class="dropdown-menu" aria-labelledby="accDrop">
                         <?php
-                        $navCats = [
-                            ['UPS',        'products.php?category=ups'],
-                            ['Monitors',   'products.php?category=monitors'],
-                            ['Headsets',   'products.php?category=headsets'],
-                            ['Keyboards',  'products.php?category=keyboards'],
-                            ['Mouse',      'products.php?category=mouse'],
-                            ['Speakers',   'products.php?category=speakers'],
-                            ['Cables',     'products.php?category=cables'],
-                            ['Adapters',   'products.php?category=adapters'],
-                            ['Software',   'products.php?category=software'],
-                            ['Printers',   'products.php?category=printers'],
-                            ['Virus Guard','products.php?category=virus-guard'],
+                        $accCats = [
+                            ['UPS',         'products.php?category=ups'],
+                            ['Monitors',    'products.php?category=monitors'],
+                            ['Headsets',    'products.php?category=headsets'],
+                            ['Keyboards',   'products.php?category=keyboards'],
+                            ['Mouse',       'products.php?category=mouse'],
+                            ['Speakers',    'products.php?category=speakers'],
+                            ['Cables',      'products.php?category=cables'],
+                            ['Adapters',    'products.php?category=adapters'],
+                            ['Software',    'products.php?category=software'],
+                            ['Printers',    'products.php?category=printers'],
+                            ['Virus Guard', 'products.php?category=virus-guard'],
                         ];
-                        foreach ($navCats as [$label, $url]): ?>
-                        <li><a class="dropdown-item" href="<?= $url ?>"><?= $label ?></a></li>
+                        foreach ($accCats as [$label, $url]): ?>
+                            <li><a class="dropdown-item" href="<?= $url ?>"><?= $label ?></a></li>
                         <?php endforeach; ?>
                     </ul>
                 </li>
 
                 <li class="nav-item">
-                    <a class="nav-link <?= ($cur_page==='contact.php'?'active':'') ?>" href="contact.php">Contact</a>
+                    <a class="nav-link <?= ($cur_page==='contact.php' ? 'active' : '') ?>" href="contact.php">Contact</a>
                 </li>
             </ul>
 
             <!-- Right group -->
             <div class="right-group d-flex align-items-center gap-2">
-
-                <!-- Search icon -->
-                <button class="icon-btn" id="searchToggle" aria-label="Search products">
-                    <i class="fas fa-search"></i>
-                </button>
 
                 <a href="cart.php" class="icon-btn" aria-label="View cart">
                     <i class="fas fa-shopping-cart"></i>
@@ -542,11 +544,12 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
                 <?php if (isset($_SESSION['user_id'])): ?>
                     <div class="dropdown">
                         <button class="btn-account dropdown-toggle" type="button"
+                            id="userDrop"
                             data-bs-toggle="dropdown" aria-expanded="false">
                            <span class="av"><?= htmlspecialchars(strtoupper(mb_substr($_SESSION['user_name'] ?? 'U', 0, 1))) ?></span>
                            <?= htmlspecialchars($_SESSION['user_name'] ?? '') ?>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-end">
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDrop">
                             <li><a class="dropdown-item" href="profile.php">
                                 <i class="fas fa-id-card me-2" style="font-size:.78rem;color:var(--ink-3)"></i>My Profile</a></li>
                             <li><a class="dropdown-item" href="orders.php">
@@ -567,30 +570,7 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
     </div>
 </nav>
 
-<!-- ═══════════════ SEARCH OVERLAY ═══════════════ -->
-<div class="search-overlay" id="searchOverlay" role="dialog" aria-label="Product search">
-    <div class="search-box">
-        <form action="products.php" method="GET">
-            <div class="search-input-wrap">
-                <i class="fas fa-search"></i>
-                <input type="text" name="q" id="searchInput"
-                       placeholder="Search laptops, RAM, GPUs, keyboards…"
-                       autocomplete="off" autofocus>
-                <span class="search-kbd">ESC</span>
-            </div>
-        </form>
-        <div class="search-hints">
-            <span>Popular:</span>
-            <a href="products.php?category=graphics" class="search-hint-tag">RTX 5080</a>
-            <a href="products.php?category=processors" class="search-hint-tag">Core Ultra</a>
-            <a href="products.php?category=memory" class="search-hint-tag">DDR5 RAM</a>
-            <a href="products.php?category=laptops" class="search-hint-tag">Gaming Laptops</a>
-            <a href="products.php?category=monitors" class="search-hint-tag">4K Monitors</a>
-        </div>
-    </div>
-</div>
-
-<!-- ═══════════════ TICKER BAR — BELOW NAVBAR ═══════════════ -->
+<!-- ═══════════════ TICKER BAR ═══════════════ -->
 <div class="ticker-bar" id="tickerBar">
     <div class="ticker-label">
         <i class="fas fa-gift" style="font-size:.8rem"></i> Limited Offers
@@ -620,9 +600,31 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
     </button>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+
 <script>
     (() => {
+        // ── Force-init all dropdowns (survives double Bootstrap load) ──
+        function initDropdowns() {
+            document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(el => {
+                try {
+                    if (el.getAttribute('href') === '#') {
+                        el.addEventListener('click', e => e.preventDefault());
+                    }
+                    const existing = bootstrap.Dropdown.getInstance(el);
+                    if (existing) existing.dispose();
+                    new bootstrap.Dropdown(el);
+                } catch(e) {}
+            });
+        }
+
+        // Run after DOM ready and also after a short delay (catches late BS loads)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initDropdowns);
+        } else {
+            initDropdowns();
+        }
+        setTimeout(initDropdowns, 300);
+
         // ── Navbar scroll shadow ──
         const nav = document.getElementById('mainNav');
         window.addEventListener('scroll', () => {
@@ -634,21 +636,22 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
         const tickerClose = document.getElementById('tickerClose');
         const body        = document.body;
 
-        tickerClose.addEventListener('click', () => {
+        function hideTicker() {
             tickerBar.style.display = 'none';
             body.classList.remove('ticker-visible');
             sessionStorage.setItem('tickerClosed', '1');
-        });
+        }
+
+        tickerClose.addEventListener('click', hideTicker);
 
         // Restore closed state across page loads (same session)
         if (sessionStorage.getItem('tickerClosed') === '1') {
-            tickerBar.style.display = 'none';
-            body.classList.remove('ticker-visible');
+            hideTicker();
         }
 
         // ── Search overlay ──
-        const overlay     = document.getElementById('searchOverlay');
-        const searchInput = document.getElementById('searchInput');
+        const overlay      = document.getElementById('searchOverlay');
+        const searchInput  = document.getElementById('searchInput');
         const searchToggle = document.getElementById('searchToggle');
 
         function openSearch() {
@@ -667,7 +670,6 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
 
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') closeSearch();
-            // Cmd/Ctrl + K to open search
             if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
                 e.preventDefault();
                 openSearch();
@@ -675,5 +677,3 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
         });
     })();
 </script>
-
-

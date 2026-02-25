@@ -188,7 +188,7 @@
         <!-- ★ YOUR FACEBOOK POST IMAGE ★ -->
         <img
             class="ad-post-img"
-            src="/uploads/2nd_repair_post_3.png"
+            src="uploads/2nd_repair_post_3.png"
             alt="Expert IT Repairs – Rapidventure Sri Lanka"
         />
 

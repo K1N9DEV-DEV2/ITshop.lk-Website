@@ -22,7 +22,7 @@ if (isset($_SESSION['user_id']) && isset($pdo)) {
 
 // ── Ticker: load settings & active messages from DB ───────────────────────────
 $ticker_enabled  = true;
-$ticker_speed    = 35;
+$ticker_speed    = 2; // default 10s per loop (adjustable in admin panel)
 $ticker_color    = '#3b5bdb';
 $ticker_messages = [];
 
@@ -322,6 +322,72 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
         }
         .ticker-close:hover { color: #fff; }
 
+        /* ── MOBILE CART BAR ─────────────────────────────────── */
+.cart-mobile-bar {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1040;
+    padding: 10px 16px max(14px, env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(255,255,255,0.98) 70%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+.cart-mobile-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    font-family: 'Red Hat Display', sans-serif;
+    font-weight: 700;
+    font-size: .95rem;
+    padding: 14px 20px;
+    border-radius: var(--r-md);
+    text-decoration: none;
+    box-shadow: 0 4px 18px rgba(12,177,0,0.35);
+    transition: background .2s, transform .15s, box-shadow .2s;
+    letter-spacing: .01em;
+    position: relative;
+}
+.cart-mobile-btn:hover,
+.cart-mobile-btn:focus { color: #fff; text-decoration: none; }
+.cart-mobile-btn:active {
+    transform: scale(0.97);
+    background: var(--accent-dark);
+    box-shadow: 0 2px 10px rgba(12,177,0,0.25);
+}
+.cart-mobile-btn i { font-size: 1.1rem; }
+.cart-mobile-btn .cart-mb-badge {
+    background: #fff;
+    color: var(--accent);
+    font-size: .72rem;
+    font-weight: 800;
+    min-width: 20px; height: 20px;
+    border-radius: var(--r-full);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    margin-left: 2px;
+}
+.cart-mobile-btn .cart-mb-total {
+    margin-left: auto;
+    font-size: .82rem;
+    font-weight: 600;
+    opacity: .88;
+    background: rgba(255,255,255,0.18);
+    padding: 3px 10px;
+    border-radius: var(--r-full);
+}
+
+@media (max-width: 991px) {
+    .cart-mobile-bar { display: block; }
+    body { padding-bottom: 76px !important; }
+}
+
         /* mobile */
         @media (max-width: 991px) {
             .navbar-collapse {
@@ -467,6 +533,7 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
             </div>
         </div>
     </div>
+    
 </nav>
 
 <?php if ($ticker_show): ?>

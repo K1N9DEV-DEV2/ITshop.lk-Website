@@ -1,20 +1,24 @@
 <?php
 /*
  * ─────────────────────────────────────────────────────────────
- *  AD POPUP SNIPPET  –  paste this into your index.php
+ *  AD POPUP SNIPPET  –  include this in your index.php
  *  PLACEMENT: right after include 'header.php';
  *
- *  Add your images to the $adImages array below.
- *  Copy all images into your uploads/ folder.
+ *  Images are managed via the Admin Panel → Media → Popup Images
  * ─────────────────────────────────────────────────────────────
  */
 
-// ★ ADD YOUR IMAGES HERE ★
-$adImages = [
-    ['src' => 'uploads/2nd_repair_post_3.png', 'alt' => 'Expert IT Repairs – Rapidventure Sri Lanka'],
-    ['src' => 'uploads/6.png', 'alt' => 'Phone & Laptop Repairs – Rapidventure Sri Lanka'],
-    ['src' => 'uploads/bitdefender_post.png', 'alt' => 'Fast Service – Rapidventure Sri Lanka'],
-];
+// Load active popup images from DB
+$adImages = [];
+if (!empty($pdo)) {
+    try {
+        $stmt = $pdo->query("SELECT image_src, alt_text, link_url FROM popup_images WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
+        $adImages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) { /* silently skip */ }
+}
+
+// Fallback: if DB is unavailable or no images, show nothing
+if (empty($adImages)) return;
 ?>
 
 <style>
@@ -76,8 +80,14 @@ $adImages = [
     pointer-events: none;
     user-select: none;
 }
-
-
+.ad-carousel-track a.ad-slide-link {
+    display: block;
+    flex-shrink: 0;
+    width: 100%;
+}
+.ad-carousel-track a.ad-slide-link .ad-post-img {
+    pointer-events: auto;
+}
 
 /* ── Dot indicators ───────────────────────────────────── */
 .ad-dots {
@@ -104,7 +114,7 @@ $adImages = [
     transform: scale(1.3);
 }
 
-/* ── Close × button (always visible, no timer) ────────── */
+/* ── Close × button ───────────────────────────────────── */
 #ad-close-btn {
     position: absolute;
     top: 12px;
@@ -135,30 +145,6 @@ $adImages = [
     transform: scale(1.1) rotate(90deg);
 }
 
-/* ── Bottom CTA strip ─────────────────────────────────── */
-.ad-strip {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    background: #0cb100;
-    color: #fff;
-    font-family: 'Red Hat Display', sans-serif;
-    font-weight: 700;
-    font-size: 0.95rem;
-    padding: 13px 20px;
-    letter-spacing: 0.02em;
-    cursor: pointer;
-    text-decoration: none;
-    transition: background 0.2s ease;
-}
-.ad-strip:hover {
-    background: #098600;
-    color: #fff;
-    text-decoration: none;
-}
-.ad-strip i { font-size: 1rem; }
-
 /* ── Hide / close transition ──────────────────────────── */
 #ad-popup-overlay.hide {
     opacity: 0;
@@ -173,8 +159,6 @@ $adImages = [
 /* ── Mobile ───────────────────────────────────────────── */
 @media (max-width: 520px) {
     #ad-popup { max-width: 95vw; border-radius: 16px; }
-    .ad-strip { font-size: 0.85rem; padding: 11px 16px; }
-
 }
 </style>
 
@@ -182,7 +166,7 @@ $adImages = [
 <div id="ad-popup-overlay" role="dialog" aria-modal="true" aria-label="Advertisement">
     <div id="ad-popup">
 
-        <!-- ✕ Close button (immediately available, no timer) -->
+        <!-- ✕ Close button -->
         <button id="ad-close-btn" aria-label="Close advertisement">
             <i class="fas fa-times"></i>
         </button>
@@ -190,17 +174,30 @@ $adImages = [
         <!-- ── Image Carousel ── -->
         <div class="ad-carousel">
             <div class="ad-carousel-track" id="ad-track">
-                <?php foreach ($adImages as $img): ?>
+                <?php foreach ($adImages as $img):
+                    $has_link = !empty($img['link_url']);
+                ?>
+                <?php if ($has_link): ?>
+                <a class="ad-slide-link" href="<?= htmlspecialchars($img['link_url']) ?>">
+                    <img
+                        class="ad-post-img"
+                        src="<?= htmlspecialchars($img['image_src']) ?>"
+                        alt="<?= htmlspecialchars($img['alt_text'] ?? '') ?>"
+                        loading="lazy"
+                    />
+                </a>
+                <?php else: ?>
                 <img
                     class="ad-post-img"
-                    src="<?= htmlspecialchars($img['src']) ?>"
-                    alt="<?= htmlspecialchars($img['alt']) ?>"
+                    src="<?= htmlspecialchars($img['image_src']) ?>"
+                    alt="<?= htmlspecialchars($img['alt_text'] ?? '') ?>"
                     loading="lazy"
                 />
+                <?php endif; ?>
                 <?php endforeach; ?>
             </div>
 
-            <!-- Dot indicators -->
+            <!-- Dot indicators (only if more than one image) -->
             <?php if (count($adImages) > 1): ?>
             <div class="ad-dots" id="ad-dots">
                 <?php foreach ($adImages as $i => $img): ?>
@@ -213,12 +210,6 @@ $adImages = [
             </div>
             <?php endif; ?>
         </div>
-
-        <!-- Bottom click-to-call strip
-        <a href="tel:+94718508203" class="ad-strip">
-            <i class="fas fa-phone-alt"></i>
-            Contact Us Now &nbsp;·&nbsp; +94 71 850 8203
-        </a>-->
 
     </div>
 </div>

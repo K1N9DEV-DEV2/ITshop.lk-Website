@@ -4,8 +4,40 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 $page_title = 'IT Shop.LK - the Best Computer Store';
-include 'header.php';
 
+// ── DB connection ─────────────────────────────────────────────────────────────
+$pdo = null;
+try {
+    require_once 'db.php';
+} catch (Throwable $e) { /* silently skip */ }
+
+// ── Load hero slides from DB ──────────────────────────────────────────────────
+$hero_slides = [];
+if ($pdo) {
+    try {
+        $stmt = $pdo->query("SELECT * FROM hero_slides WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
+        $hero_slides = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) { /* silently skip */ }
+}
+
+// ── Fallback slides if DB empty ───────────────────────────────────────────────
+if (empty($hero_slides)) {
+    $hero_slides = [
+        ['id'=>0,'title'=>'Premium Laptops','subtitle'=>'High-performance machines for every need','image_url'=>'','link_url'=>'products.php','btn_text'=>'Shop Now','btn_ghost_text'=>'View All','is_active'=>1,'sort_order'=>0],
+        ['id'=>0,'title'=>'Desktop Workstations','subtitle'=>'Build the ultimate powerhouse setup','image_url'=>'','link_url'=>'products.php','btn_text'=>'Shop Now','btn_ghost_text'=>'View All','is_active'=>1,'sort_order'=>1],
+    ];
+}
+
+// ── Load categories from DB ───────────────────────────────────────────────────
+$db_categories = [];
+if ($pdo) {
+    try {
+        $stmt = $pdo->query("SELECT c.*, COUNT(p.id) as product_count FROM categories c LEFT JOIN products p ON p.category = c.slug GROUP BY c.id ORDER BY c.name ASC");
+        $db_categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) { /* silently skip */ }
+}
+
+include 'header.php';
 include 'popup.php';
 ?>
 
@@ -79,11 +111,6 @@ include 'popup.php';
         );
     }
 
-    .hero-slide:nth-child(1) { background-image: url('https://images.unsplash.com/photo-1593640408182-31c228b41d42?w=1800&q=80'); }
-    .hero-slide:nth-child(2) { background-image: url('https://images.unsplash.com/photo-1587202372634-32705e3bf49c?w=1800&q=80'); }
-    .hero-slide:nth-child(3) { background-image: url('https://images.unsplash.com/photo-1616400619175-5beda3a17896?w=1800&q=80'); }
-    .hero-slide:nth-child(4) { background-image: url('https://images.unsplash.com/photo-1555487505-8603a1a69755?w=1800&q=80'); }
-
     .hero-grid {
         position: absolute;
         inset: 0;
@@ -124,6 +151,7 @@ include 'popup.php';
         margin: 0 auto;
         padding: 4rem 2rem;
         text-align: center;
+        transition: opacity 0.5s ease;
     }
 
     .hero-pill {
@@ -209,7 +237,6 @@ include 'popup.php';
     }
     .slider-dot:hover:not(.active) { background: rgba(255,255,255,0.65); }
 
-    /* Arrow buttons 
     .slider-arrow {
         position: absolute;
         top: 50%;
@@ -231,7 +258,6 @@ include 'popup.php';
     .slider-arrow:hover {
         background: var(--accent);
         border-color: var(--accent);
-        color: #fff;
         box-shadow: 0 4px 20px rgba(13,255,0,0.4);
     }
     .slider-arrow-prev { left: 1.5rem; }
@@ -247,29 +273,6 @@ include 'popup.php';
         box-shadow: 0 0 8px rgba(13,255,0,0.6);
         transition: width linear;
     }
-
-    .slide-caption {
-        position: absolute;
-        bottom: 3.5rem;
-        right: 2rem;
-        z-index: 4;
-        background: rgba(10,10,15,0.65);
-        border: 1px solid rgba(255,255,255,0.1);
-        backdrop-filter: blur(10px);
-        border-radius: var(--radius-md);
-        padding: 0.6rem 1.1rem;
-        color: rgba(255,255,255,0.7);
-        font-size: 0.78rem;
-        font-weight: 500;
-        opacity: 0;
-        transform: translateY(6px);
-        transition: opacity 0.5s 0.6s ease, transform 0.5s 0.6s ease;
-        pointer-events: none;
-        max-width: 220px;
-        text-align: left;
-    }
-    .slide-caption.visible { opacity: 1; transform: translateY(0); }
-    .slide-caption strong { display: block; color: #fff; font-size: 0.85rem; margin-bottom: 2px; }*/
 
     /* ── BUTTONS ──────────────────────────────────────────── */
     .btn-primary-custom {
@@ -323,10 +326,46 @@ include 'popup.php';
     .cat-desc  { font-size: 0.88rem; color: var(--ink-muted); line-height: 1.65; flex: 1; }
     .cat-link  { display: inline-flex; align-items: center; gap: 6px; margin-top: 1.25rem; font-size: 0.85rem; font-weight: 600; color: var(--accent); transition: gap 0.2s ease; }
     .cat-card:hover .cat-link { gap: 10px; }
+    .cat-count { font-size: 0.72rem; font-weight: 700; color: var(--ink-muted); margin-top: 4px; }
 
     /* ── WHATSAPP ─────────────────────────────────────────── */
     .wa-btn { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; background: #25d366; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; z-index: 9999; text-decoration: none; box-shadow: 0 6px 20px rgba(37,211,102,0.45); transition: transform 0.25s ease, box-shadow 0.25s ease; }
     .wa-btn:hover { transform: scale(1.1); box-shadow: 0 10px 30px rgba(37,211,102,0.55); color: white; text-decoration: none; }
+
+    /* ── CART FAB (mobile only) ──────────────────────────── */
+.cart-fab {
+    position: fixed;
+    bottom: 89px; right: 24px;
+    width: 56px; height: 56px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    display: none;
+    align-items: center; justify-content: center;
+    font-size: 1.3rem;
+    z-index: 9999;
+    text-decoration: none;
+    box-shadow: 0 6px 20px rgba(12,177,0,0.45);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.cart-fab:hover {
+    transform: scale(1.1);
+    box-shadow: 0 10px 30px rgba(12,177,0,0.55);
+    color: #fff;
+    text-decoration: none;
+}
+.cart-fab .cart-fab-badge {
+    position: absolute;
+    top: 10px; right: 2px;
+    min-width: 18px; height: 18px;
+    background: #fff;
+    color: var(--accent);
+    font-size: .6rem; font-weight: 800;
+    border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 3px;
+    border: 2px solid var(--accent);
+}
 
     /* ── ANIMATIONS ───────────────────────────────────────── */
     @keyframes fadeDown { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: translateY(0); } }
@@ -335,45 +374,80 @@ include 'popup.php';
     @media (max-width: 600px) {
         .cats-grid { grid-template-columns: 1fr; }
         .slider-arrow { display: none; }
-        .slide-caption { display: none; }
+        .cart-fab { display: flex; }
     }
 </style>
 
 
 <!-- HERO SLIDER -->
 <section class="hero">
+
+    <!-- Background slides -->
     <div class="hero-slides">
-        <div class="hero-slide active"></div>
-        <div class="hero-slide"></div>
-        <div class="hero-slide"></div>
-        <div class="hero-slide"></div>
+        <?php foreach ($hero_slides as $i => $slide):
+            $bg = '';
+            if (!empty($slide['image_url'])) {
+                // local upload path
+                $bg = 'style="background-image:url(\'' . htmlspecialchars($slide['image_url']) . '\')"';
+            }
+        ?>
+        <div class="hero-slide <?= $i === 0 ? 'active' : '' ?>" <?= $bg ?>
+             data-title="<?= htmlspecialchars($slide['title'] ?? '') ?>"
+             data-subtitle="<?= htmlspecialchars($slide['subtitle'] ?? '') ?>"
+             data-link="<?= htmlspecialchars($slide['link_url'] ?? 'products.php') ?>"
+             data-btn="<?= htmlspecialchars($slide['btn_text'] ?? 'Shop Now') ?>"
+             data-ghost="<?= htmlspecialchars($slide['btn_ghost_text'] ?? 'View All') ?>">
+        </div>
+        <?php endforeach; ?>
     </div>
 
     <div class="hero-grid"></div>
     <div class="hero-glow"></div>
 
-    <!-- Arrow buttons (now properly shown) -->
+    <!-- Arrow buttons -->
+    <?php if (count($hero_slides) > 1): ?>
     <button class="slider-arrow slider-arrow-prev" aria-label="Previous slide">
         <i class="fas fa-chevron-left"></i>
     </button>
     <button class="slider-arrow slider-arrow-next" aria-label="Next slide">
         <i class="fas fa-chevron-right"></i>
     </button>
+    <?php endif; ?>
+
+    <!-- Hero content (updates dynamically) -->
+    <div class="hero-inner" id="hero-content">
+        <div class="hero-pill"><span></span> Sri Lanka's No. 1 IT Store</div>
+        <h1 class="hero-title" id="hero-title">
+            <?= htmlspecialchars($hero_slides[0]['title'] ?? 'Premium Tech') ?>
+        </h1>
+        <p class="hero-sub" id="hero-sub">
+            <?= htmlspecialchars($hero_slides[0]['subtitle'] ?? 'Top-quality computers, components & accessories') ?>
+        </p>
+        <div class="hero-actions">
+            <a href="<?= htmlspecialchars($hero_slides[0]['link_url'] ?? 'products.php') ?>"
+               class="btn-primary-custom" id="hero-btn">
+                <i class="fas fa-shopping-bag"></i>
+                <?= htmlspecialchars($hero_slides[0]['btn_text'] ?? 'Shop Now') ?>
+            </a>
+            <a href="products.php" class="btn-ghost" id="hero-ghost">
+                <?= htmlspecialchars($hero_slides[0]['btn_ghost_text'] ?? 'View All') ?>
+                <i class="fas fa-arrow-right" style="font-size:0.8rem"></i>
+            </a>
+        </div>
+    </div>
 
     <!-- Dot navigation -->
-    <div class="slider-dots">
-        <button class="slider-dot active" aria-label="Slide 1"></button>
-        <button class="slider-dot" aria-label="Slide 2"></button>
-        <button class="slider-dot" aria-label="Slide 3"></button>
-        <button class="slider-dot" aria-label="Slide 4"></button>
+    <?php if (count($hero_slides) > 1): ?>
+    <div class="slider-dots" id="slider-dots">
+        <?php foreach ($hero_slides as $i => $slide): ?>
+        <button class="slider-dot <?= $i === 0 ? 'active' : '' ?>" aria-label="Slide <?= $i + 1 ?>"></button>
+        <?php endforeach; ?>
     </div>
-
-    <div class="slide-caption visible" id="slide-caption">
-        <strong>Gaming Laptops</strong>High-performance machines for serious gamers
-    </div>
+    <?php endif; ?>
 
     <div class="slider-progress" id="slider-progress"></div>
 </section>
+
 
 <!-- CATEGORIES -->
 <section class="categories-section">
@@ -384,31 +458,63 @@ include 'popup.php';
     </div>
 
     <div class="cats-grid">
-        <?php
-        $categories = [
-            ['icon' => 'fa-laptop',     'title' => 'Laptops & Notebooks',  'desc' => 'High-performance laptops for gaming, business, and everyday use.',       'url' => 'products.php?category=laptops'],
-            ['icon' => 'fa-desktop',    'title' => 'Desktop PCs',           'desc' => 'Custom-built desktops and workstations for maximum performance.',         'url' => 'products.php?category=desktops'],
-            ['icon' => 'fa-memory',     'title' => 'RAM & Storage',         'desc' => 'High-speed memory modules and storage solutions.',                         'url' => 'products.php?category=memory'],
-            ['icon' => 'fa-tv',         'title' => 'Graphics Cards',        'desc' => 'Latest VGA cards for gaming and professional graphics work.',              'url' => 'products.php?category=graphics'],
-            ['icon' => 'fa-keyboard',   'title' => 'Keyboards & Mice',      'desc' => 'Premium input devices for gaming and productivity.',                       'url' => 'products.php?category=peripherals'],
-            ['icon' => 'fa-headphones', 'title' => 'Audio Devices',         'desc' => 'High-quality headphones, speakers, and audio equipment.',                 'url' => 'products.php?category=audio'],
-        ];
-        foreach ($categories as $i => $cat): ?>
-        <a href="<?php echo $cat['url']; ?>" class="cat-card" style="transition-delay: <?php echo $i * 70; ?>ms">
+        <?php if (!empty($db_categories)):
+            foreach ($db_categories as $i => $cat):
+                $icon = !empty($cat['icon']) ? $cat['icon'] : 'fa-tag';
+                $slug = !empty($cat['slug']) ? $cat['slug'] : strtolower(str_replace(' ', '_', $cat['name']));
+                $cnt  = (int)($cat['product_count'] ?? 0);
+        ?>
+        <a href="products.php?category=<?= urlencode($slug) ?>"
+           class="cat-card"
+           style="transition-delay: <?= $i * 70 ?>ms">
             <div class="cat-icon-wrap">
-                <i class="fas <?php echo $cat['icon']; ?>"></i>
+                <i class="fas <?= htmlspecialchars($icon) ?>"></i>
             </div>
-            <div class="cat-title"><?php echo $cat['title']; ?></div>
-            <div class="cat-desc"><?php echo $cat['desc']; ?></div>
+            <div class="cat-title"><?= htmlspecialchars($cat['name']) ?></div>
+            <?php if (!empty($cat['description'])): ?>
+            <div class="cat-desc"><?= htmlspecialchars($cat['description']) ?></div>
+            <?php endif; ?>
+            <?php if ($cnt > 0): ?>
+            <div class="cat-count"><?= $cnt ?> product<?= $cnt !== 1 ? 's' : '' ?></div>
+            <?php endif; ?>
             <div class="cat-link">View Products <i class="fas fa-arrow-right" style="font-size:0.75rem"></i></div>
         </a>
-        <?php endforeach; ?>
+        <?php endforeach;
+        else:
+            // Fallback static categories if DB is empty
+            $fallback = [
+                ['icon' => 'fa-laptop',     'title' => 'Laptops & Notebooks',  'desc' => 'High-performance laptops for gaming, business, and everyday use.',  'url' => 'products.php?category=laptops'],
+                ['icon' => 'fa-desktop',    'title' => 'Desktop PCs',           'desc' => 'Custom-built desktops and workstations for maximum performance.',    'url' => 'products.php?category=desktops'],
+                ['icon' => 'fa-memory',     'title' => 'RAM & Storage',         'desc' => 'High-speed memory modules and storage solutions.',                   'url' => 'products.php?category=memory'],
+                ['icon' => 'fa-tv',         'title' => 'Graphics Cards',        'desc' => 'Latest VGA cards for gaming and professional graphics work.',        'url' => 'products.php?category=graphics'],
+                ['icon' => 'fa-keyboard',   'title' => 'Keyboards & Mice',      'desc' => 'Premium input devices for gaming and productivity.',                 'url' => 'products.php?category=peripherals'],
+                ['icon' => 'fa-headphones', 'title' => 'Audio Devices',         'desc' => 'High-quality headphones, speakers, and audio equipment.',           'url' => 'products.php?category=audio'],
+            ];
+            foreach ($fallback as $i => $cat): ?>
+        <a href="<?= $cat['url'] ?>" class="cat-card" style="transition-delay: <?= $i * 70 ?>ms">
+            <div class="cat-icon-wrap">
+                <i class="fas <?= $cat['icon'] ?>"></i>
+            </div>
+            <div class="cat-title"><?= $cat['title'] ?></div>
+            <div class="cat-desc"><?= $cat['desc'] ?></div>
+            <div class="cat-link">View Products <i class="fas fa-arrow-right" style="font-size:0.75rem"></i></div>
+        </a>
+        <?php endforeach;
+        endif; ?>
     </div>
 </section>
+
 
 <!-- WhatsApp FAB -->
 <a href="https://wa.me/94xxxxxxxxx" class="wa-btn" target="_blank" aria-label="Chat on WhatsApp">
     <i class="fab fa-whatsapp"></i>
+</a>
+
+<a href="cart.php" class="cart-fab" aria-label="View cart">
+    <i class="fas fa-shopping-cart"></i>
+    <?php if ($cart_count > 0): ?>
+        <span class="cart-fab-badge"><?= $cart_count ?></span>
+    <?php endif; ?>
 </a>
 
 <?php
@@ -416,38 +522,53 @@ $extra_scripts = <<<'JS'
 <script>
 (function () {
     const slides   = document.querySelectorAll('.hero-slide');
-    const dots     = document.querySelectorAll('.slider-dot');
-    const caption  = document.getElementById('slide-caption');
+    const dots     = document.querySelectorAll('#slider-dots .slider-dot');
     const progress = document.getElementById('slider-progress');
-
-    const CAPTIONS = [
-        { title: 'Gaming Laptops',       sub: 'High-performance machines for serious gamers' },
-        { title: 'Desktop Workstations', sub: 'Build the ultimate powerhouse setup' },
-        { title: 'Premium GPUs',         sub: 'Next-gen graphics for work and play' },
-        { title: 'Audio & Peripherals',  sub: 'Complete your setup with pro-grade gear' },
-    ];
+    const heroTitle  = document.getElementById('hero-title');
+    const heroSub    = document.getElementById('hero-sub');
+    const heroBtn    = document.getElementById('hero-btn');
+    const heroGhost  = document.getElementById('hero-ghost');
+    const heroContent = document.getElementById('hero-content');
 
     const INTERVAL = 5000;
     let current = 0;
     let timer;
 
+    function updateContent(slide) {
+        const title = slide.dataset.title;
+        const sub   = slide.dataset.subtitle;
+        const link  = slide.dataset.link  || 'products.php';
+        const btn   = slide.dataset.btn   || 'Shop Now';
+        const ghost = slide.dataset.ghost || 'View All';
+
+        heroContent.style.opacity = '0';
+        setTimeout(() => {
+            if (heroTitle && title) heroTitle.textContent = title;
+            if (heroSub   && sub)   heroSub.textContent   = sub;
+            if (heroBtn) {
+                heroBtn.href = link;
+                heroBtn.lastChild.textContent = ' ' + btn;
+            }
+            if (heroGhost) heroGhost.firstChild.textContent = ghost;
+            heroContent.style.opacity = '1';
+        }, 300);
+    }
+
     function goTo(n) {
         slides[current].classList.remove('active');
-        dots[current].classList.remove('active');
-        caption.classList.remove('visible');
+        if (dots[current]) dots[current].classList.remove('active');
 
         current = (n + slides.length) % slides.length;
 
         slides[current].classList.add('active');
-        dots[current].classList.add('active');
-
-        caption.innerHTML = `<strong>${CAPTIONS[current].title}</strong>${CAPTIONS[current].sub}`;
-        requestAnimationFrame(() => requestAnimationFrame(() => caption.classList.add('visible')));
+        if (dots[current]) dots[current].classList.add('active');
+        updateContent(slides[current]);
 
         resetProgress();
     }
 
     function resetProgress() {
+        if (!progress) return;
         progress.style.transition = 'none';
         progress.style.width = '0%';
         requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -462,7 +583,7 @@ $extra_scripts = <<<'JS'
         resetProgress();
     }
 
-    // Arrow buttons — safely grab with null check
+    // Arrow buttons
     const prevBtn = document.querySelector('.slider-arrow-prev');
     const nextBtn = document.querySelector('.slider-arrow-next');
     if (prevBtn) prevBtn.addEventListener('click', () => { goTo(current - 1); startAuto(); });
@@ -490,8 +611,9 @@ $extra_scripts = <<<'JS'
     hero.addEventListener('mouseenter', () => clearInterval(timer));
     hero.addEventListener('mouseleave', () => startAuto());
 
-    // Init
-    startAuto();
+    // Only auto-advance if more than one slide
+    if (slides.length > 1) startAuto();
+    else resetProgress();
 
     // Category card reveal
     const cards = document.querySelectorAll('.cat-card');

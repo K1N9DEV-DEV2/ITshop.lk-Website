@@ -15,7 +15,7 @@ $user_id = $_SESSION['user_id'];
 $user_currency = 'LKR';
 $cart_items = [];
 $subtotal = 0;
-$shipping_cost = 500;
+$shipping_cost = 0;
 
 // Fetch user details
 $user_details = [];
@@ -45,7 +45,6 @@ try {
     $stmt->execute([$user_id]);
     $cart_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Calculate totals
     foreach ($cart_items as &$item) {
         $item_total = $item['unit_price'] * $item['quantity'];
         $item['line_total'] = $item_total;
@@ -57,968 +56,902 @@ try {
     $cart_items = [];
 }
 
-// Calculate total (subtotal + shipping if there are items)
 $total = $subtotal + ($subtotal > 0 ? $shipping_cost : 0);
 $quotation_number = 'QT-' . date('Y') . '-' . str_pad($user_id, 5, '0', STR_PAD_LEFT) . '-' . time();
 $quotation_date = date('F d, Y');
 $valid_until = date('F d, Y', strtotime('+30 days'));
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quotation - IT Shop.LK</title>
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
+    <title>Quotation — IT Shop.LK</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
+
     <style>
         :root {
-            --primary-color: #12b800ff;
-            --secondary-color: #0d8300ff;
-            --text-dark: #1a202c;
-            --text-light: #4a5568;
-            --bg-light: #f7fafc;
+            --ink: #209e00;
+            --ink-soft: #3d3d50;
+            --ink-muted: #8888a0;
+            --surface: #f6f6f8;
+            --card: #ffffff;
+            --accent: #0cb100;
+            --accent-dark: #098600;
+            --accent-light: #eef2ff;
+            --accent-glow: rgba(12, 177, 0, 0.25);
+            --border: #e8e8f0;
+            --radius-xl: 24px;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --shadow-card: 0 2px 12px rgba(10,10,15,0.07), 0 0 0 1px rgba(10,10,15,0.05);
+            --shadow-hover: 0 16px 40px rgba(10,10,15,0.13);
         }
-        
-        * {
-            box-sizing: border-box;
-        }
-        
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: 'Inter', sans-serif;
-            color: var(--text-dark);
-            background: var(--bg-light);
-            margin: 0;
-            padding: 0;
+            font-family: 'Red Hat Display', sans-serif;
+            background: var(--surface);
+            color: var(--ink);
+            -webkit-font-smoothing: antialiased;
         }
-        
-        /* Hide elements when printing */
-        @media print {
-            .no-print, .navbar, .action-buttons, .footer {
-                display: none !important;
-            }
-            
-            body {
-                background: white;
-            }
-            
-            .quotation-container {
-                box-shadow: none !important;
-                margin: 0 !important;
-                padding: 20px !important;
-                max-width: 100% !important;
-            }
-            
-            .page-break {
-                page-break-after: always;
-            }
-            
-            @page {
-                margin: 1cm;
-                size: A4;
-            }
-            
-            .items-table {
-                font-size: 9pt;
-            }
-            
-            /* Avoid breaking inside important sections */
-            .customer-section,
-            .terms-section,
-            .notes-section {
-                page-break-inside: avoid;
-            }
-            
-            .items-table tr {
-                page-break-inside: avoid;
-            }
-        }
-        
-        .quotation-wrapper {
-            min-height: 100vh;
-            padding: 2rem 0;
-        }
-        
-        .quotation-container {
-            background: white;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 3rem;
-            box-shadow: 0 0 30px rgba(0,0,0,0.1);
-            border-radius: 10px;
-        }
-        
-        /* Header Section */
-        .quotation-header {
+
+        /* ── TOOLBAR ── */
+        .toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(10, 10, 15, 0.92);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding: 0 2rem;
+            height: 64px;
             display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: start;
-            margin-bottom: 3rem;
-            padding-bottom: 2rem;
-            border-bottom: 3px solid var(--primary-color);
-        }
-        
-        .company-info {
-            flex: 1;
-        }
-        
-        .company-logo {
-            height: 60px;
-            margin-bottom: 1rem;
-            max-width: 100%;
-        }
-        
-        .company-name {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--primary-color);
-            margin-bottom: 0.5rem;
-        }
-        
-        .company-details {
-            font-size: 0.9rem;
-            color: var(--text-light);
-            line-height: 1.6;
-        }
-        
-        .quotation-info {
-            text-align: right;
-        }
-        
-        .quotation-title {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--text-dark);
-            margin-bottom: 1rem;
-        }
-        
-        .quotation-number {
-            font-size: 1.1rem;
-            color: var(--text-light);
-            margin-bottom: 0.5rem;
-        }
-        
-        .quotation-date {
-            font-size: 0.95rem;
-            color: var(--text-light);
-        }
-        
-        /* Customer Section */
-        .customer-section {
-            margin-bottom: 3rem;
-            padding: 1.5rem;
-            background: var(--bg-light);
-            border-radius: 8px;
-        }
-        
-        .section-title {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: var(--text-dark);
-            margin-bottom: 1rem;
-        }
-        
-        .customer-details {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
             gap: 1rem;
         }
-        
-        .detail-row {
+
+        .toolbar-brand {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: #fff;
+            letter-spacing: -0.02em;
             display: flex;
-            align-items: start;
+            align-items: center;
+            gap: 8px;
         }
-        
-        .detail-label {
+
+        .toolbar-brand em {
+            font-style: normal;
+            color: var(--accent);
+        }
+
+        .toolbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 1.3rem;
+            border-radius: var(--radius-md);
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 0.875rem;
             font-weight: 600;
-            color: var(--text-light);
-            min-width: 100px;
-        }
-        
-        .detail-value {
-            color: var(--text-dark);
-            word-break: break-word;
-        }
-        
-        /* Items Table Wrapper for Mobile Scroll */
-        .items-table-wrapper {
-            overflow-x: auto;
-            margin-bottom: 2rem;
-            -webkit-overflow-scrolling: touch;
-        }
-        
-        /* Items Table */
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        .items-table thead {
-            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-            color: white;
-        }
-        
-        .items-table th {
-            padding: 1rem;
-            text-align: left;
-            font-weight: 600;
-            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            text-decoration: none;
             white-space: nowrap;
         }
-        
-        .items-table th:last-child,
-        .items-table td:last-child {
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+        .btn-primary:hover {
+            background: var(--accent-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px var(--accent-glow);
+        }
+
+        .btn-ghost {
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.7);
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .btn-ghost:hover {
+            background: rgba(255,255,255,0.14);
+            color: #fff;
+        }
+
+        /* ── PAGE ── */
+        .page {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem 5rem;
+        }
+
+        /* ── QUOTATION CARD ── */
+        .quotation-card {
+            background: var(--card);
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: var(--shadow-card);
+        }
+
+        /* ── DARK HERO HEADER ── */
+        .q-header {
+            background: var(--ink);
+            padding: 2.75rem 2.75rem 2.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* background blobs like homepage hero */
+        .q-header::before,
+        .q-header::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(70px);
+            pointer-events: none;
+        }
+        .q-header::before {
+            width: 420px; height: 420px;
+            background: radial-gradient(circle, rgba(12, 177, 0, 0.28) 0%, transparent 70%);
+            top: -160px; right: -100px;
+        }
+        .q-header::after {
+            width: 280px; height: 280px;
+            background: radial-gradient(circle, rgba(79, 135, 188, 0.18) 0%, transparent 70%);
+            bottom: -100px; left: -60px;
+        }
+
+        /* grid overlay */
+        .q-header-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+            background-size: 48px 48px;
+            pointer-events: none;
+        }
+
+        .q-logo {
+            position: relative;
+            z-index: 2;
+        }
+
+        .q-logo img {
+            height: 42px;
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+
+        .q-logo-text {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #fff;
+            letter-spacing: -0.03em;
+        }
+
+        .q-logo-text em {
+            font-style: normal;
+            color: var(--accent);
+        }
+
+        .q-company-meta {
+            margin-top: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .q-company-meta span {
+            font-size: 0.8rem;
+            color: rgb(255, 255, 255);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .q-company-meta i {
+            width: 13px;
+            color: #fff;
+            opacity: 0.7;
+        }
+
+        .q-meta-right {
             text-align: right;
+            position: relative;
+            z-index: 2;
         }
-        
-        .items-table tbody tr {
-            border-bottom: 1px solid #e2e8f0;
-            transition: background 0.2s ease;
+
+        .q-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(12, 177, 0, 0.35);
+            color: #d5f9ff;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 5px 14px;
+            border-radius: 100px;
+            margin-bottom: 1rem;
         }
-        
-        .items-table tbody tr:hover {
-            background: #f7fafc;
+        .q-pill-dot { width: 6px; height: 6px; background: #11ff00; border-radius: 50%; }
+
+        .q-title {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
+            color: #fff;
+            line-height: 1;
+            letter-spacing: -0.04em;
+            margin-bottom: 1.25rem;
         }
-        
-        .items-table td {
-            padding: 1rem;
-            font-size: 0.95rem;
+
+        .q-title em {
+            font-style: italic;
+            font-weight: 300;
+            background: linear-gradient(135deg, #1eff00 0%, #00a2ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
-        
-        .product-name {
+
+        .q-number-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            font-family: 'Red Hat Display',sans-serif;
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.93);
+            margin-bottom: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+
+        .q-dates {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .q-date-row {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.96);
+        }
+        .q-date-row strong {
+            color: rgba(255, 255, 255, 0.9);
             font-weight: 600;
-            color: var(--text-dark);
-            margin-bottom: 0.25rem;
         }
-        
-        .product-brand {
-            color: var(--text-light);
-            font-size: 0.85rem;
-            line-height: 1.4;
+
+        /* ── VALIDITY STRIP ── */
+        .validity-strip {
+            background: var(--accent);
+            padding: 0.7rem 2.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 0.01em;
         }
-        
-        /* Totals Section */
-        .totals-section {
+        .validity-strip i { font-size: 0.8rem; }
+
+        /* ── BODY ── */
+        .q-body { padding: 2.75rem; }
+
+        /* ── SECTION HEADING ── */
+        .section-heading {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--ink-muted);
+            margin-bottom: 1.1rem;
+        }
+        .section-heading i { color: var(--accent); font-size: 0.7rem; }
+        .section-heading::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* ── CUSTOMER BLOCK ── */
+        .customer-block {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--border);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            margin-bottom: 2.75rem;
+            box-shadow: var(--shadow-card);
+        }
+
+        .customer-field {
+            background: var(--card);
+            padding: 1.1rem 1.35rem;
+            transition: background 0.2s;
+        }
+        .customer-field:hover { background: #fafbff; }
+
+        .customer-field:first-child { border-radius: var(--radius-md) 0 0 0; }
+        .customer-field:nth-child(2) { border-radius: 0 var(--radius-md) 0 0; }
+        .customer-field:last-child:nth-child(odd) { grid-column: span 2; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+        .customer-field:nth-last-child(2) { border-radius: 0 0 0 var(--radius-md); }
+        .customer-field:last-child:nth-child(even) { border-radius: 0 0 var(--radius-md) 0; }
+
+        .cf-label {
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--ink-muted);
+            margin-bottom: 0.35rem;
+        }
+
+        .cf-value {
+            font-size: 0.92rem;
+            color: #000000ca;
+            font-weight: 600;
+        }
+
+        /* ── TABLE ── */
+        .table-wrap {
+            overflow-x: auto;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-card);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        thead tr {
+            background: var(--ink);
+        }
+
+        th {
+            padding: 1rem 1.1rem;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.97);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        th:last-child, td:last-child { text-align: right; }
+        th:nth-child(3), th:nth-child(4), td:nth-child(3), td:nth-child(4) { text-align: center; }
+
+        td {
+            padding: 1.05rem 1.1rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+            color: var(--ink);
+        }
+
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr { transition: background 0.15s; }
+        tbody tr:hover { background: #f7f8ff; }
+
+        .item-num {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 0.75rem;
+            color: #ccc;
+        }
+
+        .item-name { font-weight: 700; line-height: 1.35; font-size: 0.9rem; color: #000; }
+
+        .item-meta {
+            margin-top: 0.3rem;
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }
+
+        .item-tag {
+            display: inline-block;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.12rem 0.5rem;
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #000000c2;
+            letter-spacing: 0.04em;
+        }
+
+        .price-cell {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 0.82rem;
+            color: #000;
+        }
+
+        .total-cell {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .qty-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--ink);
+            color: #fff;
+            border-radius: 20px;
+            min-width: 30px;
+            height: 26px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 0 0.6rem;
+        }
+
+        /* ── TOTALS ── */
+        .totals-wrap {
             display: flex;
             justify-content: flex-end;
-            margin-bottom: 3rem;
+            margin-bottom: 2.75rem;
         }
-        
-        .totals-table {
-            min-width: 350px;
+
+        .totals-box {
+            width: 340px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-card);
         }
-        
-        .total-row {
+
+        .total-line {
             display: flex;
             justify-content: space-between;
-            padding: 0.75rem 0;
-            font-size: 0.95rem;
-        }
-        
-        .total-row.subtotal {
-            border-bottom: 1px solid #e2e8f0;
-        }
-        
-        .total-row.grand-total {
-            border-top: 2px solid var(--primary-color);
-            padding-top: 1rem;
-            margin-top: 0.5rem;
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: var(--primary-color);
-        }
-        
-        .total-label {
-            font-weight: 500;
-            color: var(--text-light);
-        }
-        
-        .total-value {
-            font-weight: 600;
-            color: var(--text-dark);
-        }
-        
-        .grand-total .total-label,
-        .grand-total .total-value {
-            color: var(--primary-color);
-        }
-        
-        /* Terms and Notes */
-        .terms-section {
-            margin-bottom: 3rem;
-            padding: 1.5rem;
-            background: #fff8e1;
-            border-left: 4px solid #ffc107;
-            border-radius: 5px;
-        }
-        
-        .terms-section h5 {
-            color: #f57c00;
-            margin-bottom: 1rem;
-            font-size: 1.1rem;
-        }
-        
-        .terms-section ul {
-            margin-bottom: 0;
-            padding-left: 1.5rem;
-        }
-        
-        .terms-section li {
-            margin-bottom: 0.5rem;
-            color: var(--text-light);
-        }
-        
-        .notes-section {
-            padding: 1.5rem;
-            background: #e3f2fd;
-            border-left: 4px solid var(--secondary-color);
-            border-radius: 5px;
-            margin-bottom: 2rem;
-        }
-        
-        .notes-section h5 {
-            color: var(--secondary-color);
-            margin-bottom: 1rem;
-            font-size: 1.1rem;
-        }
-        
-        /* Footer */
-        .quotation-footer {
-            text-align: center;
-            padding-top: 2rem;
-            border-top: 2px solid #e2e8f0;
-            color: var(--text-light);
+            align-items: center;
+            padding: 0.9rem 1.35rem;
             font-size: 0.9rem;
+            border-bottom: 1px solid var(--border);
         }
-        
-        .signature-section {
+        .total-line:last-child { border-bottom: none; }
+
+        .tl-label { color: var(--ink-muted); font-weight: 500; font-family: 'Red Hat Display', sans-serif; }
+        .tl-value { font-family: 'Red Hat Display', sans-serif; font-weight: 600; color: var(--ink); }
+
+        .total-line.grand { background: var(--ink); }
+        .total-line.grand .tl-label { color: rgb(255, 255, 255); font-weight: 600; }
+        .total-line.grand .tl-value { color: #fff; font-size: 1.1rem; }
+
+        /* ── TERMS ── */
+        .terms-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 2.75rem;
+        }
+
+        .terms-card {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 1.35rem;
+            background: var(--card);
+            box-shadow: var(--shadow-card);
+            transition: box-shadow 0.25s ease, transform 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .terms-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent), #7dfc9b);
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.35s ease;
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
+        }
+        .terms-card:hover::before { transform: scaleX(1); }
+        .terms-card:hover {
+            box-shadow: var(--shadow-hover);
+            transform: translateY(-2px);
+        }
+
+        .terms-card-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--ink-soft);
+            margin-bottom: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+        .terms-card-title i { color: var(--accent); }
+
+        .terms-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .terms-list li {
+            font-size: 0.84rem;
+            color: var(--ink-muted);
+            display: flex;
+            align-items: flex-start;
+            gap: 0.55rem;
+            line-height: 1.45;
+        }
+
+        .terms-list li::before {
+            content: '–';
+            color: var(--accent);
+            flex-shrink: 0;
+            font-weight: 700;
+            margin-top: 0.05em;
+        }
+
+        /* ── FOOTER ── */
+        .q-footer {
+            border-top: 1px solid var(--border);
+            padding: 1.6rem 2.75rem;
             display: flex;
             justify-content: space-between;
-            margin: 3rem 0 2rem;
+            align-items: center;
+            gap: 1rem;
+            background: var(--surface);
         }
-        
-        .signature-box {
+
+        .q-footer-text {
+            font-size: 0.78rem;
+            color: var(--ink-muted);
+            line-height: 1.6;
+        }
+        .q-footer-text strong { color: var(--ink); font-weight: 700; }
+
+        .q-footer-stamp {
+            flex-shrink: 0;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(12,177,0,0.06);
+        }
+        .q-footer-stamp i { color: var(--accent); font-size: 1.05rem; }
+
+        /* ── EMPTY STATE ── */
+        .empty-state {
+            padding: 6rem 2rem;
             text-align: center;
-            min-width: 200px;
         }
-        
-        .signature-line {
-            border-top: 2px solid var(--text-dark);
-            margin-top: 3rem;
-            padding-top: 0.5rem;
-            font-weight: 600;
-        }
-        
-        /* Action Buttons */
-        .action-buttons {
-            text-align: center;
-            margin: 2rem auto;
-            padding: 2rem;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            max-width: 900px;
-        }
-        
-        .btn-action {
-            margin: 0.5rem;
-            padding: 0.75rem 2rem;
-            font-weight: 600;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            border: none;
-            cursor: pointer;
-        }
-        
-        .btn-print {
-            background: var(--primary-color);
-            color: white;
-        }
-        
-        .btn-print:hover {
-            background: #0a6400;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(18, 184, 0, 0.3);
-        }
-        
-        .btn-download {
-            background: var(--secondary-color);
-            color: white;
-        }
-        
-        .btn-download:hover {
-            background: #0066cc;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 140, 255, 0.3);
-        }
-        
-        .btn-back {
-            background: white;
-            color: var(--text-dark);
-            border: 2px solid var(--text-light);
-        }
-        
-        .btn-back:hover {
-            background: var(--bg-light);
-            border-color: var(--text-dark);
-            text-decoration: none;
-        }
-        
-        /* Empty State */
-        .empty-quotation {
-            text-align: center;
-            padding: 4rem 2rem;
-        }
-        
         .empty-icon {
-            font-size: 4rem;
-            color: var(--text-light);
-            margin-bottom: 2rem;
+            width: 80px;
+            height: 80px;
+            background: var(--ink);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 8px 24px var(--accent-glow);
         }
-        
-        /* ============================================
-           RESPONSIVE DESIGN - TABLET
-           ============================================ */
-        @media (max-width: 991px) {
-            .quotation-wrapper {
-                padding: 1rem 0;
-            }
-            
-            .quotation-container {
-                padding: 2rem 1.5rem;
-                margin: 0 1rem;
-            }
-            
-            .quotation-header {
-                gap: 1.5rem;
-            }
-            
-            .company-name {
-                font-size: 1.5rem;
-            }
-            
-            .quotation-title {
-                font-size: 1.6rem;
-            }
-            
-            .customer-details {
-                gap: 0.75rem;
-            }
-            
-            .action-buttons {
-                padding: 1.5rem 1rem;
-                margin: 1rem;
-            }
-            
-            .btn-action {
-                padding: 0.65rem 1.5rem;
-                font-size: 0.95rem;
-            }
+        .empty-icon i { font-size: 1.75rem; color: var(--accent); }
+        .empty-state h3 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+        .empty-state p { color: var(--ink-muted); font-size: 0.95rem; margin-bottom: 2rem; }
+
+        /* ── PRINT ── */
+        @media print {
+            .toolbar { display: none !important; }
+            body { background: white; }
+            .page { padding: 0; max-width: 100%; }
+            .quotation-card { box-shadow: none; border: none; border-radius: 0; }
+            @page { margin: 1.2cm; size: A4; }
         }
-        
-        /* ============================================
-           RESPONSIVE DESIGN - MOBILE
-           ============================================ */
-        @media (max-width: 767px) {
-            .quotation-wrapper {
-                padding: 0.5rem 0;
-            }
-            
-            .quotation-container {
-                padding: 1.5rem 1rem;
-                margin: 0 0.5rem;
-                border-radius: 8px;
-            }
-            
-            /* Header adjustments */
-            .quotation-header {
-                flex-direction: column;
-                margin-bottom: 2rem;
-                padding-bottom: 1.5rem;
-            }
-            
-            .company-logo {
-                height: 50px;
-            }
-            
-            .company-name {
-                font-size: 1.3rem;
-            }
-            
-            .company-details {
-                font-size: 0.85rem;
-            }
-            
-            .quotation-info {
-                text-align: left;
-                margin-top: 1.5rem;
-            }
-            
-            .quotation-title {
-                font-size: 1.4rem;
-            }
-            
-            .quotation-number,
-            .quotation-date {
-                font-size: 0.9rem;
-            }
-            
-            /* Customer section */
-            .customer-section {
-                padding: 1rem;
-                margin-bottom: 2rem;
-            }
-            
-            .section-title {
-                font-size: 1rem;
-            }
-            
-            .customer-details {
-                grid-template-columns: 1fr;
-                gap: 0.75rem;
-            }
-            
-            .detail-row {
-                flex-direction: column;
-                gap: 0.25rem;
-            }
-            
-            .detail-label {
-                min-width: auto;
-                font-size: 0.85rem;
-            }
-            
-            .detail-value {
-                font-size: 0.9rem;
-            }
-            
-            /* Items table - Scrollable */
-            .items-table {
-                min-width: 600px;
-                font-size: 0.8rem;
-            }
-            
-            .items-table th,
-            .items-table td {
-                padding: 0.6rem 0.4rem;
-            }
-            
-            .product-name {
-                font-size: 0.85rem;
-            }
-            
-            .product-brand {
-                font-size: 0.75rem;
-            }
-            
-            /* Totals section */
-            .totals-section {
-                margin-bottom: 2rem;
-            }
-            
-            .totals-table {
-                min-width: 100%;
-            }
-            
-            .total-row {
-                font-size: 0.85rem;
-                padding: 0.6rem 0;
-            }
-            
-            .total-row.grand-total {
-                font-size: 1.1rem;
-            }
-            
-            /* Terms and notes */
-            .terms-section,
-            .notes-section {
-                padding: 1rem;
-                margin-bottom: 1.5rem;
-            }
-            
-            .terms-section h5,
-            .notes-section h5 {
-                font-size: 0.95rem;
-            }
-            
-            .terms-section li,
-            .notes-section p {
-                font-size: 0.85rem;
-            }
-            
-            /* Signature section */
-            .signature-section {
-                flex-direction: column;
-                gap: 2rem;
-                margin: 2rem 0 1.5rem;
-            }
-            
-            .signature-box {
-                min-width: 100%;
-            }
-            
-            .signature-line {
-                margin-top: 2rem;
-                font-size: 0.9rem;
-            }
-            
-            /* Footer */
-            .quotation-footer {
-                font-size: 0.8rem;
-                padding-top: 1.5rem;
-            }
-            
-            /* Action buttons - Stack vertically */
-            .action-buttons {
-                margin: 0.5rem;
-                padding: 1rem;
-                display: flex;
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-            
-            .btn-action {
-                width: 100%;
-                margin: 0;
-                padding: 0.75rem 1rem;
-                font-size: 0.9rem;
-            }
-            
-            /* Empty state */
-            .empty-quotation {
-                padding: 3rem 1rem;
-            }
-            
-            .empty-icon {
-                font-size: 3rem;
-            }
-            
-            .empty-quotation h3 {
-                font-size: 1.3rem;
-            }
-        }
-        
-        /* ============================================
-           RESPONSIVE DESIGN - EXTRA SMALL
-           ============================================ */
-        @media (max-width: 480px) {
-            .quotation-container {
-                padding: 1rem 0.75rem;
-                margin: 0 0.25rem;
-            }
-            
-            .company-name {
-                font-size: 1.2rem;
-            }
-            
-            .quotation-title {
-                font-size: 1.2rem;
-            }
-            
-            .items-table {
-                font-size: 0.75rem;
-                min-width: 550px;
-            }
-            
-            .items-table th,
-            .items-table td {
-                padding: 0.5rem 0.3rem;
-            }
-            
-            .total-row.grand-total {
-                font-size: 1rem;
-            }
-            
-            .btn-action {
-                font-size: 0.85rem;
-                padding: 0.7rem 0.75rem;
-            }
-        }
-        
-        /* Landscape orientation fixes */
-        @media (max-width: 767px) and (orientation: landscape) {
-            .quotation-header {
-                flex-direction: row;
-                align-items: center;
-            }
-            
-            .quotation-info {
-                text-align: right;
-                margin-top: 0;
-            }
-            
-            .customer-details {
-                grid-template-columns: repeat(2, 1fr);
-            }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 640px) {
+            .toolbar { padding: 0 1rem; }
+            .page { padding: 1rem 0.75rem 3rem; }
+            .q-header { flex-direction: column; padding: 2rem 1.5rem 1.75rem; gap: 1.5rem; }
+            .q-meta-right { text-align: left; }
+            .q-title { font-size: 2.2rem; }
+            .validity-strip { padding: 0.65rem 1.5rem; }
+            .q-body { padding: 1.5rem; }
+            .customer-block { grid-template-columns: 1fr; }
+            .customer-field:first-child { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+            .customer-field:nth-child(2) { border-radius: 0; }
+            .customer-field:last-child { border-radius: 0 0 var(--radius-md) var(--radius-md); grid-column: span 1; }
+            .terms-grid { grid-template-columns: 1fr; }
+            .totals-wrap { justify-content: stretch; }
+            .totals-box { width: 100%; }
+            .q-footer { flex-direction: column; text-align: center; padding: 1.35rem 1.5rem; }
+            .btn span { display: none; }
         }
     </style>
 </head>
 <body>
-    <div class="quotation-wrapper">
-        <!-- Action Buttons -->
-        <div class="action-buttons no-print">
-            <button onclick="downloadPDF()" class="btn btn-action btn-download">
-                <i class="fas fa-file-pdf me-2"></i>Download PDF
+
+    <!-- ── TOOLBAR ── -->
+    <div class="toolbar">
+        <div class="toolbar-brand">IT<em>&nbsp;Shop.LK</em></div>
+        <div class="toolbar-actions">
+            <button onclick="downloadPDF()" class="btn btn-primary" id="downloadBtn">
+                <i class="fas fa-download"></i>
+                <span>Download PDF</span>
             </button>
-            <a href="cart.php" class="btn btn-action btn-back">
-                <i class="fas fa-arrow-left me-2"></i>Back to Cart
+            <a href="cart.php" class="btn btn-ghost">
+                <i class="fas fa-arrow-left"></i>
+                <span>Back to Cart</span>
             </a>
         </div>
-
-        <?php if (empty($cart_items)): ?>
-        <!-- Empty State -->
-        <div class="quotation-container">
-            <div class="empty-quotation">
-                <i class="fas fa-file-invoice empty-icon"></i>
-                <h3>No Items in Cart</h3>
-                <p class="text-muted mb-4">Add items to your cart to generate a quotation</p>
-                <a href="products.php" class="btn btn-primary btn-lg">
-                    <i class="fas fa-shopping-bag me-2"></i>Browse Products
-                </a>
-            </div>
-        </div>
-        <?php else: ?>
-        
-        <!-- Quotation Document -->
-        <div class="quotation-container">
-            <!-- Header -->
-            <div class="quotation-header">
-                <div class="company-info">
-                    <img src="assets/revised-04.png" alt="STC Logo" class="company-logo">
-                    <!--<div class="company-name">IT Shop.LK</div>-->
-                    <div class="company-details">
-                        <i class="fas fa-map-marker-alt me-2"></i>admin@itshop.lk<br>
-                        <i class="fas fa-phone me-2"></i>+94 077 900 5652<br>
-                        <i class="fas fa-envelope me-2"></i>info@itshop.lk<br>
-                        <i class="fas fa-globe me-2"></i>www.itshop.lk
-                    </div>
-                </div>
-                
-                <div class="quotation-info">
-                    <div class="quotation-title">QUOTATION</div>
-                    <div class="quotation-number">
-                        <strong>Quote #:</strong> <?php echo $quotation_number; ?>
-                    </div>
-                    <div class="quotation-date">
-                        <strong>Date:</strong> <?php echo $quotation_date; ?>
-                    </div>
-                    <div class="quotation-date">
-                        <strong>Valid Until:</strong> <?php echo $valid_until; ?>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Customer Details -->
-            <div class="customer-section">
-                <h5 class="section-title">
-                    <i class="fas fa-user me-2"></i>Customer Information
-                </h5>
-                <div class="customer-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Name:</span>
-                        <span class="detail-value"><?php echo htmlspecialchars($user_details['name']); ?></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Email:</span>
-                        <span class="detail-value"><?php echo htmlspecialchars($user_details['email']); ?></span>
-                    </div>
-                    <?php if (!empty($user_details['phone'])): ?>
-                    <div class="detail-row">
-                        <span class="detail-label">Phone:</span>
-                        <span class="detail-value"><?php echo htmlspecialchars($user_details['phone']); ?></span>
-                    </div>
-                    <?php endif; ?>
-                    <div class="detail-row">
-                        <span class="detail-label">Customer ID:</span>
-                        <span class="detail-value">#<?php echo str_pad($user_id, 6, '0', STR_PAD_LEFT); ?></span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Items Table (Wrapped for mobile scroll) -->
-            <div class="items-table-wrapper">
-                <table class="items-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 5%">#</th>
-                            <th style="width: 45%">Product Description</th>
-                            <th style="width: 15%">Unit Price</th>
-                            <th style="width: 15%">Quantity</th>
-                            <th style="width: 20%">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($cart_items as $index => $item): ?>
-                        <tr>
-                            <td><?php echo $index + 1; ?></td>
-                            <td>
-                                <div class="product-name"><?php echo htmlspecialchars($item['name']); ?></div>
-                                <div class="product-brand">Brand: <?php echo htmlspecialchars($item['brand']); ?></div>
-                                <div class="product-brand">Category: <?php echo htmlspecialchars($item['category']); ?></div>
-                            </td>
-                            <td><?php echo $user_currency . ' ' . number_format($item['unit_price'], 2); ?></td>
-                            <td><?php echo $item['quantity']; ?></td>
-                            <td><?php echo $user_currency . ' ' . number_format($item['line_total'], 2); ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Totals -->
-            <div class="totals-section">
-                <div class="totals-table">
-                    <div class="total-row subtotal">
-                        <span class="total-label">Subtotal:</span>
-                        <span class="total-value"><?php echo $user_currency . ' ' . number_format($subtotal, 2); ?></span>
-                    </div>
-                    <div class="total-row">
-                        <span class="total-label">Shipping:</span>
-                        <span class="total-value"><?php echo $user_currency . ' ' . number_format($shipping_cost, 2); ?></span>
-                    </div>
-                    <div class="total-row grand-total">
-                        <span class="total-label">Grand Total:</span>
-                        <span class="total-value"><?php echo $user_currency . ' ' . number_format($total, 2); ?></span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Footer -->
-            <div class="quotation-footer">
-                <p>
-                    <strong>IT Shop.LK</strong> | Your Trusted Technology Partner<br>
-                    This is a computer-generated quotation and does not require a physical signature for validity.
-                </p>
-            </div>
-        </div>
-        
-        <?php endif; ?>
     </div>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- jsPDF Library for PDF generation -->
+    <div class="page">
+        <div class="quotation-card">
+
+            <?php if (empty($cart_items)): ?>
+            <div class="empty-state">
+                <div class="empty-icon"><i class="fas fa-file-invoice"></i></div>
+                <h3>Your cart is empty</h3>
+                <p>Add items to your cart first to generate a quotation.</p>
+                <a href="products.php" class="btn btn-primary" style="display:inline-flex;margin:0 auto;">
+                    <i class="fas fa-shopping-bag"></i> Browse Products
+                </a>
+            </div>
+
+            <?php else: ?>
+
+            <!-- ── HEADER ── -->
+            <div class="q-header">
+                <div class="q-header-grid"></div>
+
+                <div class="q-logo">
+                    <img src="assets/revised-04.png" alt="IT Shop.LK"
+                         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+                    <div class="q-logo-text" style="display:none">IT<em> Shop.LK</em></div>
+                    <div class="q-company-meta">
+                        <span><i class="fas fa-phone"></i>+94 077 900 5652</span>
+                        <span><i class="fas fa-envelope"></i>info@itshop.lk</span>
+                        <span><i class="fas fa-globe"></i>www.itshop.lk</span>
+                    </div>
+                </div>
+
+                <div class="q-meta-right">
+                    <div class="q-pill"><span class="q-pill-dot"></span>Official Document</div>
+                    <div class="q-title">Quotation</div>
+                    <div class="q-number-badge"><?php echo $quotation_number; ?></div>
+                    <div class="q-dates">
+                        <div class="q-date-row"><strong>Issued:</strong> <?php echo $quotation_date; ?></div>
+                        <div class="q-date-row"><strong>Valid until:</strong> <?php echo $valid_until; ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── VALIDITY STRIP ── -->
+            <div class="validity-strip">
+                <i class="fas fa-circle-check"></i>
+                This quotation is valid for 30 days from the date of issue. — Contact us to confirm your order.
+            </div>
+
+            <!-- ── BODY ── -->
+            <div class="q-body">
+
+                <!-- Customer -->
+                <div class="section-heading"><i class="fas fa-user"></i> Bill To</div>
+                <div class="customer-block">
+                    <div class="customer-field">
+                        <div class="cf-label">Full Name</div>
+                        <div class="cf-value"><?php echo htmlspecialchars($user_details['name']); ?></div>
+                    </div>
+                    <div class="customer-field">
+                        <div class="cf-label">Email Address</div>
+                        <div class="cf-value"><?php echo htmlspecialchars($user_details['email']); ?></div>
+                    </div>
+                    <?php if (!empty($user_details['phone'])): ?>
+                    <div class="customer-field">
+                        <div class="cf-label">Phone</div>
+                        <div class="cf-value"><?php echo htmlspecialchars($user_details['phone']); ?></div>
+                    </div>
+                    <?php endif; ?>
+                    <div class="customer-field">
+                        <div class="cf-label">Customer ID</div>
+                        <div class="cf-value" style="font-family:'Red Hat Display',sans-serif;font-size:.82rem">#<?php echo str_pad($user_id, 6, '0', STR_PAD_LEFT); ?></div>
+                    </div>
+                </div>
+
+                <!-- Items -->
+                <div class="section-heading"><i class="fas fa-list"></i> Line Items</div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Product</th>
+                                <th>Unit Price</th>
+                                <th>Qty</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($cart_items as $index => $item): ?>
+                            <tr>
+                                <td><span class="item-num"><?php echo str_pad($index + 1, 2, '0', STR_PAD_LEFT); ?></span></td>
+                                <td>
+                                    <div class="item-name"><?php echo htmlspecialchars($item['name']); ?></div>
+                                    <div class="item-meta">
+                                        <span class="item-tag"><?php echo htmlspecialchars($item['brand']); ?></span>
+                                        <span class="item-tag"><?php echo htmlspecialchars($item['category']); ?></span>
+                                    </div>
+                                </td>
+                                <td class="price-cell"><?php echo $user_currency . ' ' . number_format($item['unit_price'], 2); ?></td>
+                                <td style="text-align:center"><span class="qty-pill"><?php echo $item['quantity']; ?></span></td>
+                                <td class="total-cell"><?php echo $user_currency . ' ' . number_format($item['line_total'], 2); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Totals -->
+                <div class="totals-wrap">
+                    <div class="totals-box">
+                        <div class="total-line">
+                            <span class="tl-label">Subtotal</span>
+                            <span class="tl-value"><?php echo $user_currency . ' ' . number_format($subtotal, 2); ?></span>
+                        </div>
+                        <div class="total-line">
+                            <span class="tl-label">Shipping</span>
+                            <span class="tl-value"><?php echo $user_currency . ' ' . number_format($shipping_cost, 2); ?></span>
+                        </div>
+                        <div class="total-line grand">
+                            <span class="tl-label">Grand Total</span>
+                            <span class="tl-value"><?php echo $user_currency . ' ' . number_format($total, 2); ?></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Terms -->
+                <div class="section-heading"><i class="fas fa-file-lines"></i> Terms & Notes</div>
+                <div class="terms-grid">
+                    <div class="terms-card">
+                        <div class="terms-card-title"><i class="fas fa-shield-halved"></i> Terms & Conditions</div>
+                        <ul class="terms-list">
+                            <li>Prices are valid for 30 days from the quotation date.</li>
+                            <li>All prices are inclusive of applicable taxes.</li>
+                            <li>Payment must be made before delivery.</li>
+                            <li>Warranty terms vary by product and manufacturer.</li>
+                        </ul>
+                    </div>
+                    <div class="terms-card">
+                        <div class="terms-card-title"><i class="fas fa-circle-info"></i> Important Notes</div>
+                        <ul class="terms-list">
+                            <li>Stock availability is subject to change.</li>
+                            <li>Prices may vary depending on the final order date.</li>
+                            <li>Delivery timelines will be confirmed on order.</li>
+                            <li>Contact us for bulk order discounts.</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div><!-- /.q-body -->
+
+            <!-- ── FOOTER ── -->
+            <div class="q-footer">
+                <div class="q-footer-text">
+                    <strong>IT Shop.LK</strong> — Your Trusted Technology Partner<br>
+                    This is a computer-generated document and is valid without a physical signature.
+                </div>
+                <div class="q-footer-stamp">
+                    <i class="fas fa-check"></i>
+                </div>
+            </div>
+
+            <?php endif; ?>
+
+        </div><!-- /.quotation-card -->
+    </div><!-- /.page -->
+
+    <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    
+
     <script>
-        // Download as PDF
-        function downloadPDF() {
-            const button = event.target;
-            const originalText = button.innerHTML;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating PDF...';
-            button.disabled = true;
-            
-            // Use html2canvas to capture the quotation
-            html2canvas(document.querySelector('.quotation-container'), {
-                scale: 2,
-                useCORS: true,
-                logging: false
-            }).then(canvas => {
-                const imgData = canvas.toDataURL('image/png');
-                const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
-                
-                const imgWidth = 210; // A4 width in mm
-                const pageHeight = 297; // A4 height in mm
-                const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                let heightLeft = imgHeight;
-                let position = 0;
-                
-                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                heightLeft -= pageHeight;
-                
-                while (heightLeft >= 0) {
-                    position = heightLeft - imgHeight;
-                    pdf.addPage();
-                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                    heightLeft -= pageHeight;
-                }
-                
-                pdf.save('quotation-<?php echo $quotation_number; ?>.pdf');
-                
-                button.innerHTML = originalText;
-                button.disabled = false;
-                
-                showNotification('PDF downloaded successfully!', 'success');
-            }).catch(error => {
-                console.error('Error generating PDF:', error);
-                button.innerHTML = originalText;
-                button.disabled = false;
-                showNotification('Error generating PDF. Please try again.', 'error');
-            });
+    async function downloadPDF() {
+        const btn = document.getElementById('downloadBtn');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Generating…</span>';
+        btn.disabled = true;
+
+        try {
+            const el = document.querySelector('.quotation-card');
+            const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+            const imgW = 210;
+            const imgH = (canvas.height * imgW) / canvas.width;
+            const pageH = 297;
+            let heightLeft = imgH;
+            let pos = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, pos, imgW, imgH);
+            heightLeft -= pageH;
+            while (heightLeft > 0) {
+                pos = heightLeft - imgH;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, pos, imgW, imgH);
+                heightLeft -= pageH;
+            }
+
+            pdf.save('quotation-<?php echo $quotation_number; ?>.pdf');
+            toast('PDF downloaded successfully!', 'success');
+        } catch(e) {
+            toast('Error generating PDF. Please try again.', 'error');
         }
-        
-        // Send Email
-        function sendEmail() {
-            const button = event.target;
-            const originalText = button.innerHTML;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Sending...';
-            button.disabled = true;
-            
-            // Create email content
-            const subject = 'Quotation Request - <?php echo $quotation_number; ?>';
-            const body = `Dear Team,
 
-I would like to request a quotation for the items in my cart.
+        btn.innerHTML = orig;
+        btn.disabled = false;
+    }
 
-Quotation Number: <?php echo $quotation_number; ?>
-Date: <?php echo $quotation_date; ?>
-Total Amount: <?php echo $user_currency . ' ' . number_format($total, 2); ?>
-
-Please send me the detailed quotation at your earliest convenience.
-
-Thank you.
-
-Best regards,
-<?php echo htmlspecialchars($user_details['name']); ?>`;
-            
-            const mailtoLink = `mailto:info@itshop.lk?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            
-            window.location.href = mailtoLink;
-            
-            setTimeout(() => {
-                button.innerHTML = originalText;
-                button.disabled = false;
-            }, 2000);
-        }
-        
-        // Show notification
-        function showNotification(message, type = 'info') {
-            const notification = document.createElement('div');
-            notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible fade show`;
-            notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 9999;
-                min-width: 300px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            `;
-            notification.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.remove();
-            }, 5000);
-        }
-        
-        // Auto-print option (commented out by default)
-        // window.onload = function() {
-        //     window.print();
-        // }
+    function toast(msg, type) {
+        const el = document.createElement('div');
+        const isOk = type === 'success';
+        el.style.cssText = `
+            position:fixed;top:78px;right:20px;z-index:9999;
+            background:${isOk ? '#0cb100' : '#dc2626'};
+            color:#fff;border-radius:12px;padding:.8rem 1.3rem;
+            font-family:'Red Hat Display',sans-serif;font-size:.875rem;font-weight:700;
+            display:flex;align-items:center;gap:.5rem;
+            box-shadow:0 8px 28px rgba(0,0,0,.18);
+            animation:slideIn .25s ease;
+        `;
+        el.innerHTML = `<i class="fas fa-${isOk ? 'check-circle' : 'exclamation-circle'}"></i>${msg}`;
+        const style = document.createElement('style');
+        style.textContent = `@keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}`;
+        document.head.appendChild(style);
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 4000);
+    }
     </script>
 </body>
 </html>

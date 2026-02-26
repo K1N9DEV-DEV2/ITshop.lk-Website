@@ -416,7 +416,7 @@ include 'popup.php';
 
     <!-- Hero content (updates dynamically) -->
     <div class="hero-inner" id="hero-content">
-        <div class="hero-pill"><span></span> Sri Lanka's No. 1 IT Store</div>
+        <div class="hero-pill"><span></span> SRI LANKA BEST COMPUTER STORE</div>
         <h1 class="hero-title" id="hero-title">
             <?= htmlspecialchars($hero_slides[0]['title'] ?? 'Premium Tech') ?>
         </h1>

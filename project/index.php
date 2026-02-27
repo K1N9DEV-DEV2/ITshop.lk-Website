@@ -4,7 +4,7 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 $page_title = 'IT Shop.LK - the Best Computer Store';
-include 'header.php';
+include 'header2.php';
 ?>
 
 <style>

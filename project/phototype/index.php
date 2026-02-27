@@ -416,7 +416,7 @@ include 'popup.php';
 
     <!-- Hero content (updates dynamically) -->
     <div class="hero-inner" id="hero-content">
-        <div class="hero-pill"><span></span> SRI LANKA BEST COMPUTER STORE</div>
+        <!--<div class="hero-pill"><span></span> SRI LANKA BEST COMPUTER STORE</div>
         <h1 class="hero-title" id="hero-title">
             <?= htmlspecialchars($hero_slides[0]['title'] ?? 'Premium Tech') ?>
         </h1>
@@ -432,7 +432,7 @@ include 'popup.php';
             <a href="products.php" class="btn-ghost" id="hero-ghost">
                 <?= htmlspecialchars($hero_slides[0]['btn_ghost_text'] ?? 'View All') ?>
                 <i class="fas fa-arrow-right" style="font-size:0.8rem"></i>
-            </a>
+            </a>-->
         </div>
     </div>
 

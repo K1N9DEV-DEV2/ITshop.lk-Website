@@ -2,12 +2,12 @@
 // footer.php - Reusable footer for IT Shop.LK
 ?>
 
-    <!-- ══════════════ WHATSAPP FAB ══════════════ -->
+    <!-- ══════════════ WHATSAPP FAB ══════════════ 
     <a href="https://wa.me/your-whatsapp-number"
        class="wa-fab" target="_blank" rel="noopener noreferrer"
        aria-label="Contact us on WhatsApp">
         <i class="fab fa-whatsapp"></i>
-    </a>
+    </a>-->
 
     <!-- ══════════════ FOOTER ══════════════ -->
     <footer class="site-footer">
@@ -32,7 +32,7 @@
                     <h6 class="sf-heading">Quick Links</h6>
                     <ul>
                         <li><a href="index.php">Home</a></li>
-                        <li><a href="products.php">Products</a></li>
+                        <li><a href="products.php">Products</a></li>x
                         <li><a href="contact.php">Contact</a></li>
                     </ul>
                 </div>

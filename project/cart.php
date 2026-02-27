@@ -121,7 +121,7 @@ try {
     // Silently fall back
 }
 
-$page_title       = 'Shopping Cart - STC Electronics Store';
+$page_title       = 'Shopping Cart - IT Shop.LK';
 $page_description = 'Review your selected items and proceed to checkout';
 
 include 'header.php';

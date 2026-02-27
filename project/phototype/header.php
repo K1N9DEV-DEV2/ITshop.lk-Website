@@ -22,7 +22,7 @@ if (isset($_SESSION['user_id']) && isset($pdo)) {
 
 // ── Ticker: load settings & active messages from DB ───────────────────────────
 $ticker_enabled  = true;
-$ticker_speed    = 2; // default 10s per loop (adjustable in admin panel)
+$ticker_speed    = 2;
 $ticker_color    = '#3b5bdb';
 $ticker_messages = [];
 
@@ -45,21 +45,21 @@ if (isset($pdo)) {
     } catch (PDOException $e) {}
 }
 
-// Hardcoded fallback if no DB messages exist yet
 if (empty($ticker_messages)) {
     $ticker_messages = [
-        ['emoji' => '🔥', 'message' => 'Free delivery on orders over LKR 50,000',              'link_url' => '',                           'link_text' => ''],
-        ['emoji' => '💻', 'message' => 'New Arrivals: Intel Core Ultra 200 Series now in stock','link_url' => '',                           'link_text' => ''],
-        ['emoji' => '🖥️', 'message' => 'Up to 20% off on Gaming Monitors this week',            'link_url' => '',                           'link_text' => ''],
-        ['emoji' => '⚡', 'message' => 'RTX 5080 pre-orders open',                               'link_url' => 'products.php?category=graphics','link_text' => 'Reserve yours'],
-        ['emoji' => '🛡️', 'message' => '1-Year Local Warranty on all laptops',                   'link_url' => '',                           'link_text' => ''],
-        ['emoji' => '🎧', 'message' => 'Buy any headset &amp; get a free mouse pad',             'link_url' => '',                           'link_text' => ''],
-        ['emoji' => '📦', 'message' => 'Same-day dispatch for orders placed before 2 PM',        'link_url' => '',                           'link_text' => ''],
+        ['emoji' => '🔥', 'message' => 'Free delivery on orders over LKR 50,000',               'link_url' => '',                            'link_text' => ''],
+        ['emoji' => '💻', 'message' => 'New Arrivals: Intel Core Ultra 200 Series now in stock', 'link_url' => '',                            'link_text' => ''],
+        ['emoji' => '🖥️', 'message' => 'Up to 20% off on Gaming Monitors this week',             'link_url' => '',                            'link_text' => ''],
+        ['emoji' => '⚡', 'message' => 'RTX 5080 pre-orders open',                                'link_url' => 'products.php?category=graphics','link_text' => 'Reserve yours'],
+        ['emoji' => '🛡️', 'message' => '1-Year Local Warranty on all laptops',                    'link_url' => '',                            'link_text' => ''],
+        ['emoji' => '🎧', 'message' => 'Buy any headset &amp; get a free mouse pad',              'link_url' => '',                            'link_text' => ''],
+        ['emoji' => '📦', 'message' => 'Same-day dispatch for orders placed before 2 PM',         'link_url' => '',                            'link_text' => ''],
     ];
 }
 
 $page_title = $page_title ?? 'IT Shop.LK - Best Computer Store';
 $cur_page   = basename($_SERVER['PHP_SELF']);
+$cur_search = $_GET['search'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -97,7 +97,6 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             --r-full: 999px;
             --shadow-drop: 0 8px 32px rgba(13,13,20,.12);
 
-            /* legacy compat */
             --primary-color:   #0a00cc;
             --secondary-color: #10b981;
             --text-dark:       #0d0d14;
@@ -111,13 +110,9 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             color: var(--ink);
             line-height: 1.6;
             -webkit-font-smoothing: antialiased;
-            /* Default: room for navbar + ticker */
             padding-top: calc(var(--navbar-h) + var(--ticker-h));
         }
-        /* When ticker is hidden by user click or disabled in admin */
-        body.ticker-off {
-            padding-top: var(--navbar-h) !important;
-        }
+        body.ticker-off { padding-top: var(--navbar-h) !important; }
 
         /* ═══════════════════════════════════════════════
            NAVBAR
@@ -139,27 +134,19 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
 
         /* nav links */
         .navbar-nav .nav-link {
-            font-size: .875rem;
-            font-weight: 600;
+            font-size: .875rem; font-weight: 600;
             color: var(--ink-2) !important;
             padding: .45rem .9rem !important;
-            border-radius: var(--r-sm);
-            letter-spacing: .01em;
+            border-radius: var(--r-sm); letter-spacing: .01em;
             transition: color .15s, background .15s;
         }
         .navbar-nav .nav-link:hover,
-        .navbar-nav .nav-link.active {
-            color: var(--accent) !important;
-            background: var(--accent-soft);
-        }
+        .navbar-nav .nav-link.active { color: var(--accent) !important; background: var(--accent-soft); }
 
         /* dropdown */
         .dropdown-menu {
-            border: 1px solid rgba(0,0,0,.07);
-            border-radius: var(--r-lg);
-            box-shadow: var(--shadow-drop);
-            padding: .5rem;
-            min-width: 210px;
+            border: 1px solid rgba(0,0,0,.07); border-radius: var(--r-lg);
+            box-shadow: var(--shadow-drop); padding: .5rem; min-width: 210px;
             animation: menuIn .17s ease both;
         }
         @keyframes menuIn {
@@ -168,59 +155,80 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
         }
         .dropdown-item {
             font-family: 'Red Hat Display', sans-serif;
-            font-size: .855rem;
-            font-weight: 500;
-            color: var(--ink-2);
-            border-radius: var(--r-sm);
-            padding: .46rem .85rem;
+            font-size: .855rem; font-weight: 500; color: var(--ink-2);
+            border-radius: var(--r-sm); padding: .46rem .85rem;
             transition: background .13s, color .13s;
         }
         .dropdown-item:hover,
         .dropdown-item:focus { background: var(--accent-soft); color: var(--accent); }
-        .dropdown-divider    { margin: .3rem 0; border-color: rgba(0,0,0,.06); }
+        .dropdown-divider { margin: .3rem 0; border-color: rgba(0,0,0,.06); }
 
         /* icon button */
         .icon-btn {
-            position: relative;
-            width: 40px; height: 40px;
-            border-radius: var(--r-md);
-            background: transparent;
-            border: none;
-            color: var(--ink-2);
-            font-size: 1rem;
+            position: relative; width: 40px; height: 40px;
+            border-radius: var(--r-md); background: transparent; border: none;
+            color: var(--ink-2); font-size: 1rem;
             display: inline-flex; align-items: center; justify-content: center;
-            text-decoration: none;
-            transition: background .15s, color .15s;
-            cursor: pointer;
-            flex-shrink: 0;
+            text-decoration: none; transition: background .15s, color .15s;
+            cursor: pointer; flex-shrink: 0;
         }
         .icon-btn:hover { background: var(--accent-soft); color: var(--accent); }
         .icon-btn .bdot {
-            position: absolute;
-            top: 4px; right: 4px;
-            min-width: 17px; height: 17px;
-            border-radius: var(--r-full);
-            background: var(--accent);
-            color: #fff;
+            position: absolute; top: 4px; right: 4px;
+            min-width: 17px; height: 17px; border-radius: var(--r-full);
+            background: var(--accent); color: #fff;
             font-size: .6rem; font-weight: 700;
             display: flex; align-items: center; justify-content: center;
-            padding: 0 3px;
-            border: 2px solid var(--white);
+            padding: 0 3px; border: 2px solid var(--white);
         }
 
         /* cart total */
         .cart-total {
-            font-size: .78rem; font-weight: 600;
-            color: var(--ink-3);
-            background: var(--surface);
-            border: 1px solid rgba(0,0,0,.14);
-            border-radius: var(--r-full);
-            padding: 4px 12px;
-            white-space: nowrap;
+            font-size: .78rem; font-weight: 600; color: var(--ink-3);
+            background: var(--surface); border: 1px solid rgba(0,0,0,.14);
+            border-radius: var(--r-full); padding: 4px 12px; white-space: nowrap;
         }
 
         /* separator */
         .v-sep { width:1px; height:22px; background:rgba(0,0,0,.1); flex-shrink:0; }
+
+        /* ── Navbar Search ── */
+        .nav-search-form { display: flex; align-items: center; }
+        .nav-search-wrap {
+            position: relative; display: flex; align-items: center;
+        }
+        .nav-search-wrap .nav-search-icon {
+            position: absolute; left: .7rem;
+            color: var(--ink-3); font-size: .75rem;
+            pointer-events: none; z-index: 1;
+        }
+        .nav-search-input {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: .82rem; font-weight: 500;
+            border: 1px solid rgba(0,0,0,.1);
+            border-radius: var(--r-full);
+            padding: .42rem 2.4rem .42rem 2.1rem;
+            color: var(--ink); background: var(--surface);
+            width: 190px;
+            transition: border-color .2s, box-shadow .2s, width .3s ease, background .2s;
+            outline: none;
+        }
+        .nav-search-input:focus {
+            border-color: var(--accent-border);
+            box-shadow: 0 0 0 3px rgba(12,177,0,.1);
+            background: var(--white);
+            width: 250px;
+        }
+        .nav-search-input::placeholder { color: var(--ink-3); }
+        .nav-search-btn {
+            position: absolute; right: 4px;
+            width: 28px; height: 28px;
+            background: var(--accent); border: none; border-radius: var(--r-full);
+            color: #fff; font-size: .68rem;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: background .15s, transform .15s; flex-shrink: 0;
+        }
+        .nav-search-btn:hover { background: var(--accent-dark); transform: scale(1.05); }
 
         /* CTA button */
         .btn-cta {
@@ -256,34 +264,127 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             font-size: .6rem; font-weight: 800; color: #fff; flex-shrink: 0;
         }
 
-        /* toggler */
-        .navbar-toggler { border: 1px solid rgba(0,0,0,.1); border-radius: var(--r-sm); padding: 6px 10px; }
-        .navbar-toggler:focus { box-shadow: none; }
+        /* ═══════════════════════════════════════════════
+           MODERN HAMBURGER TOGGLER
+        ═══════════════════════════════════════════════ */
+        .navbar-toggler {
+            border: none !important;
+            background: none !important;
+            padding: 0 !important;
+            outline: none !important;
+            box-shadow: none !important;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--r-md);
+            transition: background .15s;
+            flex-shrink: 0;
+        }
+        .navbar-toggler:focus { box-shadow: none !important; outline: none !important; }
+        .navbar-toggler:hover { background: var(--accent-soft); }
+
+        /* Custom hamburger icon */
+        .hamburger-icon {
+            width: 22px;
+            height: 16px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+        .hamburger-icon span {
+            display: block;
+            height: 2px;
+            border-radius: 2px;
+            background: var(--ink-2);
+            transition: all .3s cubic-bezier(.4,0,.2,1);
+            transform-origin: center;
+        }
+        .hamburger-icon span:nth-child(1) { width: 100%; }
+        .hamburger-icon span:nth-child(2) { width: 75%; }
+        .hamburger-icon span:nth-child(3) { width: 55%; }
+
+        /* Animated state when open */
+        .navbar-toggler[aria-expanded="true"] .hamburger-icon span:nth-child(1) {
+            transform: translateY(7px) rotate(45deg);
+            width: 100%;
+            background: var(--accent);
+        }
+        .navbar-toggler[aria-expanded="true"] .hamburger-icon span:nth-child(2) {
+            opacity: 0;
+            transform: scaleX(0);
+        }
+        .navbar-toggler[aria-expanded="true"] .hamburger-icon span:nth-child(3) {
+            transform: translateY(-7px) rotate(-45deg);
+            width: 100%;
+            background: var(--accent);
+        }
+
+        /* ── MOBILE TOP ROW (brand + search + toggler) ── */
+        .mobile-top-row {
+            display: none;
+            width: 100%;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Mobile inline search bar (left of toggler) */
+        .mobile-search-wrap {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .mobile-search-icon {
+            position: absolute; left: .65rem;
+            color: var(--ink-3); font-size: .72rem;
+            pointer-events: none; z-index: 1;
+        }
+        .mobile-search-input {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: .82rem; font-weight: 500;
+            border: 1px solid rgba(0,0,0,.11);
+            border-radius: var(--r-full);
+            padding: .42rem 2.2rem .42rem 2rem;
+            color: var(--ink);
+            background: #f6f8f5;
+            width: 100%;
+            outline: none;
+            transition: border-color .2s, box-shadow .2s, background .2s;
+        }
+        .mobile-search-input:focus {
+            border-color: var(--accent-border);
+            box-shadow: 0 0 0 3px rgba(12,177,0,.1);
+            background: var(--white);
+        }
+        .mobile-search-input::placeholder { color: var(--ink-3); }
+        .mobile-search-btn {
+            position: absolute; right: 4px;
+            width: 26px; height: 26px;
+            background: var(--accent); border: none; border-radius: var(--r-full);
+            color: #fff; font-size: .65rem;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: background .15s;
+        }
+        .mobile-search-btn:hover { background: var(--accent-dark); }
 
         /* ═══════════════════════════════════════════════
            TICKER BAR
         ═══════════════════════════════════════════════ */
         .ticker-bar {
             background: <?= htmlspecialchars($ticker_color) ?>;
-            color: #fff;
-            font-family: 'Red Hat Display', sans-serif;
-            font-size: .82rem;
-            font-weight: 600;
+            color: #fff; font-family: 'Red Hat Display', sans-serif;
+            font-size: .82rem; font-weight: 600;
             height: var(--ticker-h);
-            display: flex;
-            align-items: center;
-            overflow: hidden;
-            position: fixed;
-            top: var(--navbar-h);
-            left: 0; right: 0;
+            display: flex; align-items: center; overflow: hidden;
+            position: fixed; top: var(--navbar-h); left: 0; right: 0;
             z-index: 1029;
             transition: transform .3s ease, opacity .3s ease;
         }
-        .ticker-bar.hidden {
-            transform: translateY(-100%);
-            opacity: 0;
-            pointer-events: none;
-        }
+        .ticker-bar.hidden { transform: translateY(-100%); opacity: 0; pointer-events: none; }
         .ticker-bar .ticker-label {
             flex-shrink: 0; padding: 0 16px; height: 100%;
             display: flex; align-items: center; gap: 8px;
@@ -301,13 +402,8 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
             animation: tickerScroll <?= $ticker_speed ?>s linear infinite;
         }
         .ticker-inner:hover { animation-play-state: paused; }
-        .ticker-item {
-            display: inline-flex; align-items: center; gap: 8px; padding: 0 28px;
-        }
-        .ticker-item .sep {
-            width: 4px; height: 4px; border-radius: 50%;
-            background: rgba(255,255,255,.35); display: inline-block;
-        }
+        .ticker-item { display: inline-flex; align-items: center; gap: 8px; padding: 0 28px; }
+        .ticker-item .sep { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.35); display: inline-block; }
         .ticker-item a { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
         .ticker-item a:hover { color: rgba(255,255,255,.75); }
         @keyframes tickerScroll {
@@ -322,90 +418,84 @@ $cur_page   = basename($_SERVER['PHP_SELF']);
         }
         .ticker-close:hover { color: #fff; }
 
-        /* ── MOBILE CART BAR ─────────────────────────────────── */
-.cart-mobile-bar {
-    display: none;
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    z-index: 1040;
-    padding: 10px 16px max(14px, env(safe-area-inset-bottom));
-    background: linear-gradient(to top, rgba(255,255,255,0.98) 70%, transparent);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-}
-.cart-mobile-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    width: 100%;
-    background: var(--accent);
-    color: #fff;
-    font-family: 'Red Hat Display', sans-serif;
-    font-weight: 700;
-    font-size: .95rem;
-    padding: 14px 20px;
-    border-radius: var(--r-md);
-    text-decoration: none;
-    box-shadow: 0 4px 18px rgba(12,177,0,0.35);
-    transition: background .2s, transform .15s, box-shadow .2s;
-    letter-spacing: .01em;
-    position: relative;
-}
-.cart-mobile-btn:hover,
-.cart-mobile-btn:focus { color: #fff; text-decoration: none; }
-.cart-mobile-btn:active {
-    transform: scale(0.97);
-    background: var(--accent-dark);
-    box-shadow: 0 2px 10px rgba(12,177,0,0.25);
-}
-.cart-mobile-btn i { font-size: 1.1rem; }
-.cart-mobile-btn .cart-mb-badge {
-    background: #fff;
-    color: var(--accent);
-    font-size: .72rem;
-    font-weight: 800;
-    min-width: 20px; height: 20px;
-    border-radius: var(--r-full);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 5px;
-    margin-left: 2px;
-}
-.cart-mobile-btn .cart-mb-total {
-    margin-left: auto;
-    font-size: .82rem;
-    font-weight: 600;
-    opacity: .88;
-    background: rgba(255,255,255,0.18);
-    padding: 3px 10px;
-    border-radius: var(--r-full);
-}
+        /* ── MOBILE CART BAR ── */
+        .cart-mobile-bar {
+            display: none;
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040;
+            padding: 10px 16px max(14px, env(safe-area-inset-bottom));
+            background: linear-gradient(to top, rgba(255,255,255,0.98) 70%, transparent);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+        .cart-mobile-btn {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            width: 100%; background: var(--accent); color: #fff;
+            font-family: 'Red Hat Display', sans-serif; font-weight: 700; font-size: .95rem;
+            padding: 14px 20px; border-radius: var(--r-md); text-decoration: none;
+            box-shadow: 0 4px 18px rgba(12,177,0,0.35);
+            transition: background .2s, transform .15s, box-shadow .2s;
+            letter-spacing: .01em; position: relative;
+        }
+        .cart-mobile-btn:hover, .cart-mobile-btn:focus { color: #fff; text-decoration: none; }
+        .cart-mobile-btn:active { transform: scale(0.97); background: var(--accent-dark); box-shadow: 0 2px 10px rgba(12,177,0,0.25); }
+        .cart-mobile-btn i { font-size: 1.1rem; }
+        .cart-mobile-btn .cart-mb-badge {
+            background: #fff; color: var(--accent); font-size: .72rem; font-weight: 800;
+            min-width: 20px; height: 20px; border-radius: var(--r-full);
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 0 5px; margin-left: 2px;
+        }
+        .cart-mobile-btn .cart-mb-total {
+            margin-left: auto; font-size: .82rem; font-weight: 600; opacity: .88;
+            background: rgba(255,255,255,0.18); padding: 3px 10px; border-radius: var(--r-full);
+        }
 
-@media (max-width: 991px) {
-    .cart-mobile-bar { display: block; }
-    body { padding-bottom: 76px !important; }
-}
-
-        /* mobile */
+        /* ═══════════════════════════════════════════════
+           RESPONSIVE — MOBILE
+        ═══════════════════════════════════════════════ */
         @media (max-width: 991px) {
+            /* Show mobile top row, hide default toggler */
+            .mobile-top-row { display: flex; }
+            .default-toggler { display: none !important; }
+
+            /* Hide desktop search from right-group on mobile (we use mobile-search-wrap instead) */
+            .right-group .nav-search-form { display: none; }
+
+            .cart-mobile-bar { display: block; }
+            body { padding-bottom: 76px !important; }
+
+            /* Collapse panel styles */
             .navbar-collapse {
                 background: var(--white);
                 border-radius: var(--r-lg);
                 border: 1px solid rgba(0,0,0,.07);
                 box-shadow: var(--shadow-drop);
-                padding: 1rem; margin-top: .6rem;
+                padding: 1rem;
+                margin-top: .6rem;
             }
-            .right-group { flex-wrap: wrap; gap: 8px !important; margin-top: .75rem; }
+            .right-group {
+                flex-wrap: wrap;
+                gap: 8px !important;
+                margin-top: .75rem;
+                /* hide cart icon/total in collapse — they're in the bottom bar */
+            }
+
+            /* Navbar container on mobile: flex column so mobile-top-row and collapse stack */
+            .navbar > .container {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0;
+            }
+            /* The collapse toggle target stays as Bootstrap handles it */
+        }
+
+        @media (min-width: 992px) {
+            /* Hide mobile row on desktop, show default layout */
+            .mobile-top-row { display: none !important; }
+            .default-toggler { display: flex !important; }
         }
     </style>
 </head>
-<?php
-// Determine if ticker is effectively visible
-// (globally enabled AND user hasn't dismissed it this session)
-$ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
-?>
+<?php $ticker_show = $ticker_enabled; ?>
 <body class="<?= $ticker_show ? '' : 'ticker-off' ?>">
 
 <!-- ═══════════════════════════════════════════════
@@ -414,25 +504,62 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
 <nav class="navbar navbar-expand-lg fixed-top" id="mainNav">
     <div class="container">
 
-        <a class="navbar-brand" href="index.php">
+        <!-- ══════════════════════════════
+             MOBILE TOP ROW
+             (Brand | Search Bar | Hamburger)
+        ══════════════════════════════ -->
+        <div class="mobile-top-row">
+            <!-- Brand -->
+            <a class="navbar-brand me-0" href="index.php" style="flex-shrink:0">
+                <img src="assets/revised-04.png" alt="IT Shop.LK">
+            </a>
+
+            <!-- Mobile Search -->
+            <form class="mobile-search-wrap" method="GET" action="products.php" role="search">
+                <i class="fas fa-search mobile-search-icon"></i>
+                <input
+                    type="text"
+                    name="search"
+                    class="mobile-search-input"
+                    placeholder="Search products…"
+                    value="<?= htmlspecialchars($cur_search) ?>"
+                    aria-label="Search products">
+                <button type="submit" class="mobile-search-btn" aria-label="Submit search">
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+
+            <!-- Modern Hamburger -->
+            <button class="navbar-toggler" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                    aria-controls="navbarNav" aria-expanded="false"
+                    aria-label="Toggle navigation">
+                <div class="hamburger-icon">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </button>
+        </div>
+
+        <!-- ══════════════════════════════
+             DESKTOP BRAND (hidden on mobile)
+        ══════════════════════════════ -->
+        <a class="navbar-brand d-none d-lg-flex" href="index.php">
             <img src="assets/revised-04.png" alt="IT Shop.LK">
         </a>
 
-        <button class="navbar-toggler" type="button"
-                data-bs-toggle="collapse" data-bs-target="#navbarNav"
-                aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-
+        <!-- ══════════════════════════════
+             COLLAPSIBLE NAV
+        ══════════════════════════════ -->
         <div class="collapse navbar-collapse" id="navbarNav">
 
-            <!-- Centre links -->
+            <!-- Nav links -->
             <ul class="navbar-nav mx-auto gap-1">
                 <li class="nav-item">
                     <a class="nav-link <?= $cur_page==='index.php' ? 'active' : '' ?>" href="index.php">Home</a>
                 </li>
 
-                <!-- Products dropdown -->
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle <?= $cur_page==='products.php' ? 'active' : '' ?>"
                        href="#" id="prodDrop" role="button"
@@ -462,7 +589,6 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
                     </ul>
                 </li>
 
-                <!-- Accessories dropdown -->
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle"
                        href="#" id="accDrop" role="button"
@@ -491,9 +617,27 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
                 </li>
             </ul>
 
-            <!-- Right group -->
+            <!-- Right group: Search → Cart → Account -->
             <div class="right-group d-flex align-items-center gap-2">
 
+                <!-- ── Search bar (desktop only — hidden on mobile via CSS) ── -->
+                <form class="nav-search-form" method="GET" action="products.php" role="search">
+                    <div class="nav-search-wrap">
+                        <i class="fas fa-search nav-search-icon"></i>
+                        <input
+                            type="text"
+                            name="search"
+                            class="nav-search-input"
+                            placeholder="Search products…"
+                            value="<?= htmlspecialchars($cur_search) ?>"
+                            aria-label="Search products">
+                        <button type="submit" class="nav-search-btn" aria-label="Submit search">
+                            <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </form>
+
+                <!-- ── Cart icon ── -->
                 <a href="cart.php" class="icon-btn" aria-label="View cart">
                     <i class="fas fa-shopping-cart"></i>
                     <?php if ($cart_count > 0): ?>
@@ -507,6 +651,7 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
 
                 <div class="v-sep d-none d-lg-block"></div>
 
+                <!-- ── Account ── -->
                 <?php if (isset($_SESSION['user_id'])): ?>
                     <div class="dropdown">
                         <button class="btn-account dropdown-toggle" type="button"
@@ -533,12 +678,11 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
             </div>
         </div>
     </div>
-    
 </nav>
 
 <?php if ($ticker_show): ?>
 <!-- ═══════════════════════════════════════════════
-     TICKER BAR  (DB-driven — managed in admin panel)
+     TICKER BAR
 ═══════════════════════════════════════════════ -->
 <div class="ticker-bar" id="tickerBar">
 
@@ -549,11 +693,7 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
 
     <div class="ticker-track">
         <div class="ticker-inner" id="tickerInner">
-            <?php
-            // Render two identical sets so the scroll loops seamlessly
-            foreach ([1, 2] as $pass):
-                foreach ($ticker_messages as $tm):
-            ?>
+            <?php foreach ([1, 2] as $pass): foreach ($ticker_messages as $tm): ?>
             <span class="ticker-item">
                 <?= htmlspecialchars($tm['emoji'] ?? '') ?>
                 <?= htmlspecialchars($tm['message']) ?>
@@ -571,42 +711,43 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
     </button>
 </div>
 <?php else: ?>
-<!-- Ticker disabled in admin panel -->
 <style>body { padding-top: var(--navbar-h) !important; }</style>
 <?php endif; ?>
 
 
+
 <script>
 (() => {
-    // ── Bootstrap dropdown init (handles double-load edge cases) ──────────────
+    // Bootstrap dropdown init
     function initDropdowns() {
         document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(el => {
             try {
-                if (el.getAttribute('href') === '#') {
-                    el.addEventListener('click', e => e.preventDefault());
-                }
+                if (el.getAttribute('href') === '#') el.addEventListener('click', e => e.preventDefault());
                 const existing = bootstrap.Dropdown.getInstance(el);
                 if (existing) existing.dispose();
                 new bootstrap.Dropdown(el);
             } catch (e) {}
         });
     }
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initDropdowns);
-    } else {
-        initDropdowns();
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDropdowns);
+    else initDropdowns();
     setTimeout(initDropdowns, 300);
 
-    // ── Navbar scroll shadow ──────────────────────────────────────────────────
+    // Navbar scroll shadow
     const nav = document.getElementById('mainNav');
-    if (nav) {
-        window.addEventListener('scroll', () => {
-            nav.classList.toggle('is-scrolled', window.scrollY > 10);
-        }, { passive: true });
+    if (nav) window.addEventListener('scroll', () => nav.classList.toggle('is-scrolled', window.scrollY > 10), { passive: true });
+
+    // Sync hamburger aria-expanded for CSS animation
+    const toggler = document.querySelector('.navbar-toggler[data-bs-target="#navbarNav"]');
+    if (toggler) {
+        const collapse = document.getElementById('navbarNav');
+        if (collapse) {
+            collapse.addEventListener('show.bs.collapse',  () => toggler.setAttribute('aria-expanded', 'true'));
+            collapse.addEventListener('hide.bs.collapse',  () => toggler.setAttribute('aria-expanded', 'false'));
+        }
     }
 
-    // ── Ticker close (dismiss for this session) ───────────────────────────────
+    // Ticker close
     const tickerBar   = document.getElementById('tickerBar');
     const tickerClose = document.getElementById('tickerClose');
 
@@ -615,15 +756,12 @@ $ticker_show = $ticker_enabled; // PHP-side; JS will check sessionStorage
         tickerBar.classList.add('hidden');
         document.body.classList.add('ticker-off');
         sessionStorage.setItem('tickerClosed', '1');
-        // Wait for CSS transition then remove from layout
         setTimeout(() => { tickerBar.style.display = 'none'; }, 320);
     }
 
     if (tickerClose) tickerClose.addEventListener('click', hideTicker);
 
-    // Restore dismissed state within the same browser session
     if (tickerBar && sessionStorage.getItem('tickerClosed') === '1') {
-        // instant hide (no animation on restore)
         tickerBar.style.display = 'none';
         document.body.classList.add('ticker-off');
     }

@@ -572,6 +572,8 @@ $cur_search = $_GET['search'] ?? '';
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <?php foreach ([
+                            ['Laptops',      'products.php?category=laptops'],
+                            ['Desktops',     'products.php?category=desktops'],
                             ['Processors',   'products.php?category=processors'],
                             ['Motherboard',  'products.php?category=motherboards'],
                             ['Coolers',      'products.php?category=coolers'],
@@ -581,8 +583,6 @@ $cur_search = $_GET['search'] ?? '';
                             ['Graphic Cards','products.php?category=graphics'],
                             ['Power Supply', 'products.php?category=power'],
                             ['PC Cases',     'products.php?category=cases'],
-                            ['Laptops',      'products.php?category=laptops'],
-                            ['Desktops',     'products.php?category=desktops'],
                         ] as [$label, $url]): ?>
                             <li><a class="dropdown-item" href="<?= $url ?>"><?= $label ?></a></li>
                         <?php endforeach; ?>

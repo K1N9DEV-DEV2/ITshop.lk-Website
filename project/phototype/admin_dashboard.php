@@ -78,30 +78,40 @@ if ($pdo) {
             created_at DATETIME     NOT NULL DEFAULT NOW(),
             updated_at DATETIME     NOT NULL DEFAULT NOW() ON UPDATE NOW()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        // Ensure ticker_settings table for global on/off
         $pdo->exec("CREATE TABLE IF NOT EXISTS ticker_settings (
             id          INT AUTO_INCREMENT PRIMARY KEY,
             setting_key VARCHAR(80) NOT NULL UNIQUE,
             setting_val TEXT        NOT NULL DEFAULT ''
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        // Default: ticker enabled
         $pdo->exec("INSERT IGNORE INTO ticker_settings (setting_key, setting_val) VALUES ('ticker_enabled','1')");
         $pdo->exec("INSERT IGNORE INTO ticker_settings (setting_key, setting_val) VALUES ('ticker_speed','35')");
         $pdo->exec("INSERT IGNORE INTO ticker_settings (setting_key, setting_val) VALUES ('ticker_color','#3b5bdb')");
     } catch (PDOException $e) { /* silently skip */ }
 
-    // ── Ensure advertisements table exists ────────────────────────────────────
+    // ── Ensure hero_slides table exists ───────────────────────────────────────
     try {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS advertisements (
+        $pdo->exec("CREATE TABLE IF NOT EXISTS hero_slides (
             id          INT AUTO_INCREMENT PRIMARY KEY,
-            title       VARCHAR(255)  NOT NULL,
+            title       VARCHAR(255)  NOT NULL DEFAULT '',
             subtitle    VARCHAR(255)  NOT NULL DEFAULT '',
-            image       VARCHAR(500)  NOT NULL DEFAULT '',
+            image_url   VARCHAR(500)  NOT NULL DEFAULT '',
             link_url    VARCHAR(500)  NOT NULL DEFAULT '',
-            position    VARCHAR(50)   NOT NULL DEFAULT 'hero',
-            badge_text  VARCHAR(60)   NOT NULL DEFAULT '',
-            btn_text    VARCHAR(60)   NOT NULL DEFAULT 'Shop Now',
-            btn_color   VARCHAR(20)   NOT NULL DEFAULT '#0cb100',
+            btn_text    VARCHAR(80)   NOT NULL DEFAULT 'Shop Now',
+            btn_ghost_text VARCHAR(80) NOT NULL DEFAULT 'View All',
+            is_active   TINYINT(1)    NOT NULL DEFAULT 1,
+            sort_order  INT           NOT NULL DEFAULT 0,
+            created_at  DATETIME      NOT NULL DEFAULT NOW(),
+            updated_at  DATETIME      NOT NULL DEFAULT NOW() ON UPDATE NOW()
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (PDOException $e) { /* silently skip */ }
+
+    // ── Ensure popup_images table exists ──────────────────────────────────────
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS popup_images (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            image_src   VARCHAR(500)  NOT NULL,
+            alt_text    VARCHAR(255)  NOT NULL DEFAULT '',
+            link_url    VARCHAR(500)  NOT NULL DEFAULT '',
             is_active   TINYINT(1)    NOT NULL DEFAULT 1,
             sort_order  INT           NOT NULL DEFAULT 0,
             created_at  DATETIME      NOT NULL DEFAULT NOW(),
@@ -185,11 +195,6 @@ $order_stats = dbq(
 
 $pending_count = (int)($order_stats['pending'] ?? 0);
 
-// ── Load advertisements ───────────────────────────────────────────────────────
-$db_ads = dbq(
-    "SELECT * FROM advertisements ORDER BY position ASC, sort_order ASC, id DESC"
-) ?: [];
-
 // ── Load ticker data ─────────────────────────────────────────────────────────
 $db_ticker_items = dbq("SELECT * FROM ticker_items ORDER BY sort_order ASC, id ASC") ?: [];
 $ticker_settings = [];
@@ -200,20 +205,13 @@ $ticker_speed   = (int)($ticker_settings['ticker_speed'] ?? 35);
 $ticker_color   = $ticker_settings['ticker_color'] ?? '#3b5bdb';
 $ticker_active_count = count(array_filter($db_ticker_items, fn($t) => $t['is_active']));
 
-$ad_positions = [
-    'hero'    => ['label' => 'Hero / Main Banner',  'icon' => 'fa-panorama',        'color' => '#0cb100', 'desc' => 'Full-width hero slider at top of homepage'],
-    'banner'  => ['label' => 'Section Banner',       'icon' => 'fa-rectangle-wide',  'color' => '#3b82f6', 'desc' => 'Mid-page promotional banner strip'],
-    'sidebar' => ['label' => 'Sidebar Promo',        'icon' => 'fa-sidebar',         'color' => '#8b5cf6', 'desc' => 'Right-side sidebar widget'],
-    'popup'   => ['label' => 'Popup / Overlay',      'icon' => 'fa-window-maximize', 'color' => '#f59e0b', 'desc' => 'Modal overlay shown on page load'],
-    'footer'  => ['label' => 'Footer Banner',        'icon' => 'fa-rectangle',       'color' => '#6b7280', 'desc' => 'Banner in footer area above copyright'],
-];
+// ── Load hero slides ──────────────────────────────────────────────────────────
+$db_hero_slides = dbq("SELECT * FROM hero_slides ORDER BY sort_order ASC, id ASC") ?: [];
+$active_hero_slides = count(array_filter($db_hero_slides, fn($s) => $s['is_active']));
 
-$ads_by_position = [];
-foreach ($db_ads as $ad) {
-    $ads_by_position[$ad['position']][] = $ad;
-}
-$active_ads   = count(array_filter($db_ads, fn($a) => $a['is_active']));
-$inactive_ads = count($db_ads) - $active_ads;
+// ── Load popup images ─────────────────────────────────────────────────────────
+$db_popup_images = dbq("SELECT * FROM popup_images ORDER BY sort_order ASC, id ASC") ?: [];
+$active_popup_images = count(array_filter($db_popup_images, fn($p) => $p['is_active']));
 
 // ── POST handlers ─────────────────────────────────────────────────────────────
 $flash = [];
@@ -551,110 +549,200 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // ── ADD ADVERTISEMENT ─────────────────────────────────────────────────────
-    if ($act === 'add_ad') {
-        $ad_title     = trim($_POST['ad_title'] ?? '');
-        $ad_subtitle  = trim($_POST['ad_subtitle'] ?? '');
-        $ad_link      = trim($_POST['ad_link'] ?? '');
-        $ad_position  = trim($_POST['ad_position'] ?? 'hero');
-        $ad_badge     = trim($_POST['ad_badge'] ?? '');
-        $ad_btn_text  = trim($_POST['ad_btn_text'] ?? 'Shop Now');
-        $ad_btn_color = trim($_POST['ad_btn_color'] ?? '#0cb100');
-        $ad_active    = isset($_POST['ad_active']) ? 1 : 0;
-        $ad_order     = intval($_POST['ad_order'] ?? 0);
-        $ad_image     = trim($_POST['ad_image_url'] ?? '');
-        if (!empty($_FILES['ad_image_file']['name']) && $_FILES['ad_image_file']['error'] === UPLOAD_ERR_OK) {
-            $ext = strtolower(pathinfo($_FILES['ad_image_file']['name'], PATHINFO_EXTENSION));
+    // ── ADD HERO SLIDE ────────────────────────────────────────────────────────
+    if ($act === 'add_hero_slide') {
+        $s_title      = trim($_POST['slide_title'] ?? '');
+        $s_subtitle   = trim($_POST['slide_subtitle'] ?? '');
+        $s_link       = trim($_POST['slide_link'] ?? '');
+        $s_btn        = trim($_POST['slide_btn'] ?? 'Shop Now');
+        $s_ghost      = trim($_POST['slide_ghost_btn'] ?? 'View All');
+        $s_order      = intval($_POST['slide_order'] ?? 0);
+        $s_active     = isset($_POST['slide_active']) ? 1 : 0;
+        $s_image      = trim($_POST['slide_image_url'] ?? '');
+        if (!empty($_FILES['slide_image_file']['name']) && $_FILES['slide_image_file']['error'] === UPLOAD_ERR_OK) {
+            $ext = strtolower(pathinfo($_FILES['slide_image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
-                $dir = 'uploads/ads/';
+                $dir = 'uploads/hero/';
                 if (!is_dir($dir)) mkdir($dir, 0755, true);
-                $fname = uniqid('ad_') . '.' . $ext;
-                if (move_uploaded_file($_FILES['ad_image_file']['tmp_name'], $dir . $fname)) $ad_image = $dir . $fname;
+                $fname = uniqid('hero_') . '.' . $ext;
+                if (move_uploaded_file($_FILES['slide_image_file']['tmp_name'], $dir . $fname)) $s_image = $dir . $fname;
             }
         }
-        if ($ad_title) {
+        if ($s_image || $s_title) {
             try {
-                $pdo->prepare("INSERT INTO advertisements (title,subtitle,image,link_url,position,badge_text,btn_text,btn_color,is_active,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?)")
-                    ->execute([$ad_title,$ad_subtitle,$ad_image,$ad_link,$ad_position,$ad_badge,$ad_btn_text,$ad_btn_color,$ad_active,$ad_order]);
-                $flash = ['type' => 'success', 'msg' => "Ad \"$ad_title\" created!"];
+                $pdo->prepare("INSERT INTO hero_slides (title,subtitle,image_url,link_url,btn_text,btn_ghost_text,is_active,sort_order) VALUES (?,?,?,?,?,?,?,?)")
+                    ->execute([$s_title,$s_subtitle,$s_image,$s_link,$s_btn,$s_ghost,$s_active,$s_order]);
+                $flash = ['type' => 'success', 'msg' => 'Hero slide added!'];
             } catch (PDOException $e) {
                 $flash = ['type' => 'error', 'msg' => 'DB error: ' . $e->getMessage()];
             }
         } else {
-            $flash = ['type' => 'error', 'msg' => 'Ad title is required.'];
+            $flash = ['type' => 'error', 'msg' => 'An image or title is required.'];
         }
         $_SESSION['flash'] = $flash;
-        header('Location: ?page=advertisements');
+        header('Location: ?page=media&tab=hero_slides');
         exit;
     }
 
-    // ── EDIT ADVERTISEMENT ────────────────────────────────────────────────────
-    if ($act === 'edit_ad') {
-        $aid          = intval($_POST['ad_id'] ?? 0);
-        $ad_title     = trim($_POST['ad_title'] ?? '');
-        $ad_subtitle  = trim($_POST['ad_subtitle'] ?? '');
-        $ad_link      = trim($_POST['ad_link'] ?? '');
-        $ad_position  = trim($_POST['ad_position'] ?? 'hero');
-        $ad_badge     = trim($_POST['ad_badge'] ?? '');
-        $ad_btn_text  = trim($_POST['ad_btn_text'] ?? 'Shop Now');
-        $ad_btn_color = trim($_POST['ad_btn_color'] ?? '#0cb100');
-        $ad_active    = isset($_POST['ad_active']) ? 1 : 0;
-        $ad_order     = intval($_POST['ad_order'] ?? 0);
-        $ad_image     = trim($_POST['ad_image_url'] ?? '');
-        if (!empty($_FILES['ad_image_file']['name']) && $_FILES['ad_image_file']['error'] === UPLOAD_ERR_OK) {
-            $ext = strtolower(pathinfo($_FILES['ad_image_file']['name'], PATHINFO_EXTENSION));
+    // ── EDIT HERO SLIDE ───────────────────────────────────────────────────────
+    if ($act === 'edit_hero_slide') {
+        $sid      = intval($_POST['slide_id'] ?? 0);
+        $s_title  = trim($_POST['slide_title'] ?? '');
+        $s_subtitle = trim($_POST['slide_subtitle'] ?? '');
+        $s_link   = trim($_POST['slide_link'] ?? '');
+        $s_btn    = trim($_POST['slide_btn'] ?? 'Shop Now');
+        $s_ghost  = trim($_POST['slide_ghost_btn'] ?? 'View All');
+        $s_order  = intval($_POST['slide_order'] ?? 0);
+        $s_active = isset($_POST['slide_active']) ? 1 : 0;
+        $s_image  = trim($_POST['slide_image_url'] ?? '');
+        if (!empty($_FILES['slide_image_file']['name']) && $_FILES['slide_image_file']['error'] === UPLOAD_ERR_OK) {
+            $ext = strtolower(pathinfo($_FILES['slide_image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
-                $dir = 'uploads/ads/';
+                $dir = 'uploads/hero/';
                 if (!is_dir($dir)) mkdir($dir, 0755, true);
-                $fname = uniqid('ad_') . '.' . $ext;
-                if (move_uploaded_file($_FILES['ad_image_file']['tmp_name'], $dir . $fname)) $ad_image = $dir . $fname;
+                $fname = uniqid('hero_') . '.' . $ext;
+                if (move_uploaded_file($_FILES['slide_image_file']['tmp_name'], $dir . $fname)) $s_image = $dir . $fname;
             }
         }
-        if (!$ad_image) $ad_image = trim($_POST['existing_ad_image'] ?? '');
-        if ($aid && $ad_title) {
+        if (!$s_image) $s_image = trim($_POST['existing_slide_image'] ?? '');
+        if ($sid) {
             try {
-                $pdo->prepare("UPDATE advertisements SET title=?,subtitle=?,image=?,link_url=?,position=?,badge_text=?,btn_text=?,btn_color=?,is_active=?,sort_order=? WHERE id=?")
-                    ->execute([$ad_title,$ad_subtitle,$ad_image,$ad_link,$ad_position,$ad_badge,$ad_btn_text,$ad_btn_color,$ad_active,$ad_order,$aid]);
-                $flash = ['type' => 'success', 'msg' => "Ad \"$ad_title\" updated!"];
+                $pdo->prepare("UPDATE hero_slides SET title=?,subtitle=?,image_url=?,link_url=?,btn_text=?,btn_ghost_text=?,is_active=?,sort_order=?,updated_at=NOW() WHERE id=?")
+                    ->execute([$s_title,$s_subtitle,$s_image,$s_link,$s_btn,$s_ghost,$s_active,$s_order,$sid]);
+                $flash = ['type' => 'success', 'msg' => 'Hero slide updated!'];
             } catch (PDOException $e) {
                 $flash = ['type' => 'error', 'msg' => 'DB error: ' . $e->getMessage()];
             }
         }
         $_SESSION['flash'] = $flash;
-        header('Location: ?page=advertisements');
+        header('Location: ?page=media&tab=hero_slides');
         exit;
     }
 
-    // ── DELETE ADVERTISEMENT ──────────────────────────────────────────────────
-    if ($act === 'delete_ad') {
-        $aid = intval($_POST['ad_id'] ?? 0);
-        if ($aid) {
+    // ── DELETE HERO SLIDE ─────────────────────────────────────────────────────
+    if ($act === 'delete_hero_slide') {
+        $sid = intval($_POST['slide_id'] ?? 0);
+        if ($sid) {
             try {
-                $pdo->prepare("DELETE FROM advertisements WHERE id=?")->execute([$aid]);
-                $flash = ['type' => 'success', 'msg' => 'Ad deleted.'];
+                $pdo->prepare("DELETE FROM hero_slides WHERE id=?")->execute([$sid]);
+                $flash = ['type' => 'success', 'msg' => 'Hero slide deleted.'];
             } catch (PDOException $e) {
                 $flash = ['type' => 'error', 'msg' => 'Could not delete: ' . $e->getMessage()];
             }
         }
         $_SESSION['flash'] = $flash;
-        header('Location: ?page=advertisements');
+        header('Location: ?page=media&tab=hero_slides');
         exit;
     }
 
-    // ── TOGGLE AD ACTIVE ──────────────────────────────────────────────────────
-    if ($act === 'toggle_ad') {
-        $aid = intval($_POST['ad_id'] ?? 0);
-        if ($aid) {
-            try { $pdo->prepare("UPDATE advertisements SET is_active = 1 - is_active WHERE id=?")->execute([$aid]); }
+    // ── TOGGLE HERO SLIDE ─────────────────────────────────────────────────────
+    if ($act === 'toggle_hero_slide') {
+        $sid = intval($_POST['slide_id'] ?? 0);
+        if ($sid) {
+            try { $pdo->prepare("UPDATE hero_slides SET is_active = 1 - is_active WHERE id=?")->execute([$sid]); }
             catch (PDOException $e) {}
         }
-        header('Location: ?page=advertisements');
+        header('Location: ?page=media&tab=hero_slides');
+        exit;
+    }
+
+    // ── ADD POPUP IMAGE ───────────────────────────────────────────────────────
+    if ($act === 'add_popup_image') {
+        $p_alt    = trim($_POST['popup_alt'] ?? '');
+        $p_link   = trim($_POST['popup_link'] ?? '');
+        $p_order  = intval($_POST['popup_order'] ?? 0);
+        $p_active = isset($_POST['popup_active']) ? 1 : 0;
+        $p_src    = trim($_POST['popup_image_url'] ?? '');
+        if (!empty($_FILES['popup_image_file']['name']) && $_FILES['popup_image_file']['error'] === UPLOAD_ERR_OK) {
+            $ext = strtolower(pathinfo($_FILES['popup_image_file']['name'], PATHINFO_EXTENSION));
+            if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
+                $dir = 'uploads/';
+                if (!is_dir($dir)) mkdir($dir, 0755, true);
+                $fname = uniqid('popup_') . '.' . $ext;
+                if (move_uploaded_file($_FILES['popup_image_file']['tmp_name'], $dir . $fname)) $p_src = $dir . $fname;
+            }
+        }
+        if ($p_src) {
+            try {
+                $pdo->prepare("INSERT INTO popup_images (image_src,alt_text,link_url,is_active,sort_order) VALUES (?,?,?,?,?)")
+                    ->execute([$p_src,$p_alt,$p_link,$p_active,$p_order]);
+                $flash = ['type' => 'success', 'msg' => 'Popup image added!'];
+            } catch (PDOException $e) {
+                $flash = ['type' => 'error', 'msg' => 'DB error: ' . $e->getMessage()];
+            }
+        } else {
+            $flash = ['type' => 'error', 'msg' => 'An image is required.'];
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=media&tab=popup_images');
+        exit;
+    }
+
+    // ── EDIT POPUP IMAGE ──────────────────────────────────────────────────────
+    if ($act === 'edit_popup_image') {
+        $pid2    = intval($_POST['popup_id'] ?? 0);
+        $p_alt   = trim($_POST['popup_alt'] ?? '');
+        $p_link  = trim($_POST['popup_link'] ?? '');
+        $p_order = intval($_POST['popup_order'] ?? 0);
+        $p_active= isset($_POST['popup_active']) ? 1 : 0;
+        $p_src   = trim($_POST['popup_image_url'] ?? '');
+        if (!empty($_FILES['popup_image_file']['name']) && $_FILES['popup_image_file']['error'] === UPLOAD_ERR_OK) {
+            $ext = strtolower(pathinfo($_FILES['popup_image_file']['name'], PATHINFO_EXTENSION));
+            if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
+                $dir = 'uploads/';
+                if (!is_dir($dir)) mkdir($dir, 0755, true);
+                $fname = uniqid('popup_') . '.' . $ext;
+                if (move_uploaded_file($_FILES['popup_image_file']['tmp_name'], $dir . $fname)) $p_src = $dir . $fname;
+            }
+        }
+        if (!$p_src) $p_src = trim($_POST['existing_popup_image'] ?? '');
+        if ($pid2) {
+            try {
+                $pdo->prepare("UPDATE popup_images SET image_src=?,alt_text=?,link_url=?,is_active=?,sort_order=?,updated_at=NOW() WHERE id=?")
+                    ->execute([$p_src,$p_alt,$p_link,$p_active,$p_order,$pid2]);
+                $flash = ['type' => 'success', 'msg' => 'Popup image updated!'];
+            } catch (PDOException $e) {
+                $flash = ['type' => 'error', 'msg' => 'DB error: ' . $e->getMessage()];
+            }
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=media&tab=popup_images');
+        exit;
+    }
+
+    // ── DELETE POPUP IMAGE ────────────────────────────────────────────────────
+    if ($act === 'delete_popup_image') {
+        $pid2 = intval($_POST['popup_id'] ?? 0);
+        if ($pid2) {
+            try {
+                $pdo->prepare("DELETE FROM popup_images WHERE id=?")->execute([$pid2]);
+                $flash = ['type' => 'success', 'msg' => 'Popup image deleted.'];
+            } catch (PDOException $e) {
+                $flash = ['type' => 'error', 'msg' => 'Could not delete: ' . $e->getMessage()];
+            }
+        }
+        $_SESSION['flash'] = $flash;
+        header('Location: ?page=media&tab=popup_images');
+        exit;
+    }
+
+    // ── TOGGLE POPUP IMAGE ────────────────────────────────────────────────────
+    if ($act === 'toggle_popup_image') {
+        $pid2 = intval($_POST['popup_id'] ?? 0);
+        if ($pid2) {
+            try { $pdo->prepare("UPDATE popup_images SET is_active = 1 - is_active WHERE id=?")->execute([$pid2]); }
+            catch (PDOException $e) {}
+        }
+        header('Location: ?page=media&tab=popup_images');
         exit;
     }
 }
 
 // Flash from redirect
 if (isset($_SESSION['flash'])) { $flash = $_SESSION['flash']; unset($_SESSION['flash']); }
+
+// Active sub-tab for media page
+$active_tab = $_GET['tab'] ?? 'hero_slides';
 
 // ── Status badge colours ──────────────────────────────────────────────────────
 $status_colors = [
@@ -665,17 +753,17 @@ $status_colors = [
     'cancelled'  => ['bg' => '#fee2e2', 'color' => '#dc2626'],
 ];
 
-// ── Nav items ─────────────────────────────────────────────────────────────────
+// ── Nav items (advertisements removed) ───────────────────────────────────────
 $nav_items = [
-    ['page' => 'dashboard',      'icon' => 'fa-gauge-high',      'label' => 'Dashboard',    'roles' => ['admin','superadmin']],
-    ['page' => 'products',       'icon' => 'fa-box',             'label' => 'Products',     'roles' => ['admin','superadmin']],
-    ['page' => 'orders',         'icon' => 'fa-bag-shopping',    'label' => 'Orders',       'roles' => ['admin','superadmin']],
-    ['page' => 'customers',      'icon' => 'fa-users',           'label' => 'Customers',    'roles' => ['admin','superadmin']],
-    ['page' => 'categories',     'icon' => 'fa-layer-group',     'label' => 'Categories',   'roles' => ['admin','superadmin']],
-    ['page' => 'ticker',         'icon' => 'fa-bullhorn',        'label' => 'Ticker Bar',   'roles' => ['admin','superadmin']],
-    ['page' => 'advertisements', 'icon' => 'fa-rectangle-ad',    'label' => 'Ads & Banners','roles' => ['admin','superadmin']],
-    ['page' => 'reports',        'icon' => 'fa-chart-line',      'label' => 'Reports',      'roles' => ['admin','superadmin']],
-    ['page' => 'settings',       'icon' => 'fa-gear',            'label' => 'Settings',     'roles' => ['superadmin']],
+    ['page' => 'dashboard',  'icon' => 'fa-gauge-high',   'label' => 'Dashboard',   'roles' => ['admin','superadmin']],
+    ['page' => 'products',   'icon' => 'fa-box',          'label' => 'Products',    'roles' => ['admin','superadmin']],
+    ['page' => 'orders',     'icon' => 'fa-bag-shopping', 'label' => 'Orders',      'roles' => ['admin','superadmin']],
+    ['page' => 'customers',  'icon' => 'fa-users',        'label' => 'Customers',   'roles' => ['admin','superadmin']],
+    ['page' => 'categories', 'icon' => 'fa-layer-group',  'label' => 'Categories',  'roles' => ['admin','superadmin']],
+    ['page' => 'ticker',     'icon' => 'fa-bullhorn',     'label' => 'Ticker Bar',  'roles' => ['admin','superadmin']],
+    ['page' => 'media',      'icon' => 'fa-photo-film',   'label' => 'Media',       'roles' => ['admin','superadmin']],
+    ['page' => 'reports',    'icon' => 'fa-chart-line',   'label' => 'Reports',     'roles' => ['admin','superadmin']],
+    ['page' => 'settings',   'icon' => 'fa-gear',         'label' => 'Settings',    'roles' => ['superadmin']],
 ];
 
 // Common icon options for the picker
@@ -927,47 +1015,33 @@ $icon_options = [
         .role-chip.superadmin { background:rgba(12,177,0,.15); color:#0cb100; }
         .role-chip.admin      { background:rgba(59,130,246,.12); color:#1d4ed8; }
 
-        /* ── AD PAGE STYLES ──────────────────────────────────── */
+        /* ── SUB-TABS ────────────────────────────────────────── */
+        .sub-tabs { display:flex; gap:4px; margin-bottom:1.4rem; background:var(--card); border-radius:var(--r-lg); padding:5px; box-shadow:var(--shadow); width:fit-content; }
+        .sub-tab { padding:7px 18px; border-radius:var(--r-md); font-size:.82rem; font-weight:700; border:none; background:none; color:var(--ink-muted); cursor:pointer; text-decoration:none; transition:all .18s; display:inline-flex; align-items:center; gap:7px; }
+        .sub-tab:hover { color:var(--ink); background:var(--surface); text-decoration:none; }
+        .sub-tab.active { background:var(--accent); color:#fff; box-shadow:0 2px 10px var(--accent-glow); }
+
+        /* ── MEDIA CARDS ─────────────────────────────────────── */
         .ad-stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:12px; margin-bottom:1.5rem; }
         .ad-stat  { background:var(--card); border-radius:var(--r-lg); padding:1rem 1.2rem; box-shadow:var(--shadow); display:flex; align-items:center; gap:11px; }
         .ad-stat-ico { width:38px; height:38px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; font-size:.95rem; flex-shrink:0; }
         .ad-stat-v { font-size:1.3rem; font-weight:800; color:var(--ink); letter-spacing:-.02em; }
         .ad-stat-l { font-size:.67rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-muted); }
-        .pos-section { margin-bottom:1.5rem; }
-        .pos-hdr { display:flex; align-items:center; gap:9px; margin-bottom:.8rem; padding:.65rem 1rem; background:var(--card); border-radius:var(--r-md); box-shadow:var(--shadow); }
-        .pos-hdr-ico { width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:.8rem; }
-        .pos-hdr strong { font-size:.87rem; font-weight:700; color:var(--ink); }
-        .pos-hdr span   { font-size:.74rem; color:var(--ink-muted); }
-        .pos-count { margin-left:auto; font-size:.72rem; font-weight:700; padding:2px 9px; border-radius:100px; }
-        .ad-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:11px; }
-        .ad-card  { background:var(--card); border-radius:var(--r-lg); box-shadow:var(--shadow); overflow:hidden; transition:box-shadow .18s, transform .18s; animation:fadeUp .35s ease both; }
-        .ad-card:hover { box-shadow:0 6px 28px rgba(10,10,15,.13); transform:translateY(-1px); }
-        .ad-card.inactive { opacity:.62; }
-        .ad-img-wrap { height:140px; background:var(--surface); position:relative; overflow:hidden; }
-        .ad-img-wrap img { width:100%; height:100%; object-fit:cover; }
-        .ad-img-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:var(--ink-muted); font-size:2rem; }
+        .media-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:12px; margin-bottom:1.4rem; }
+        .media-card { background:var(--card); border-radius:var(--r-lg); box-shadow:var(--shadow); overflow:hidden; transition:box-shadow .18s, transform .18s; animation:fadeUp .35s ease both; }
+        .media-card:hover { box-shadow:0 6px 28px rgba(10,10,15,.13); transform:translateY(-1px); }
+        .media-card.inactive { opacity:.58; }
+        .media-img-wrap { height:155px; background:var(--surface); position:relative; overflow:hidden; }
+        .media-img-wrap img { width:100%; height:100%; object-fit:cover; }
+        .media-img-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:var(--ink-muted); font-size:2.2rem; }
+        .media-card-body { padding:.8rem 1rem; }
+        .media-card-body strong { font-size:.87rem; font-weight:800; color:var(--ink); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .media-card-body .sub { font-size:.72rem; color:var(--ink-muted); margin:2px 0 7px; }
+        .media-card-foot { padding:.6rem 1rem; border-top:1px solid rgba(10,10,15,.06); display:flex; align-items:center; justify-content:space-between; }
         .ad-status-pill { position:absolute; top:8px; left:8px; font-size:.62rem; font-weight:700; padding:3px 9px; border-radius:100px; }
-        .ad-pos-pill    { position:absolute; top:8px; right:8px; font-size:.62rem; font-weight:700; padding:3px 9px; border-radius:100px; background:rgba(10,10,15,.55); color:#fff; backdrop-filter:blur(4px); }
         .ad-sort-pill   { position:absolute; bottom:8px; right:8px; font-size:.62rem; font-weight:700; padding:2px 7px; border-radius:100px; background:rgba(10,10,15,.45); color:#fff; }
-        .ad-body { padding:.9rem 1rem; }
-        .ad-body strong { font-size:.9rem; font-weight:800; color:var(--ink); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .ad-body .sub   { font-size:.76rem; color:var(--ink-muted); margin:2px 0 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .ad-meta { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
         .ad-meta-tag { font-size:.62rem; font-weight:700; padding:2px 7px; border-radius:100px; background:var(--surface); color:var(--ink-muted); display:inline-flex; align-items:center; gap:3px; }
         .ad-meta-tag i { font-size:.58rem; }
-        .ad-foot { padding:.7rem 1rem; border-top:1px solid rgba(10,10,15,.06); display:flex; align-items:center; justify-content:space-between; gap:7px; }
-        .ad-actions { display:flex; gap:4px; }
-        /* Preview modal */
-        .preview-device { background:#1a1a2e; border-radius:var(--r-lg); overflow:hidden; position:relative; }
-        .preview-chrome { height:22px; background:#0d0d18; display:flex; align-items:center; padding:0 12px; }
-        .preview-chrome::after { content:'IT Shop.LK'; font-size:.62rem; font-weight:700; color:#44445a; }
-        .preview-hero { background:linear-gradient(135deg,#111 0%,#1a1a2e 100%); min-height:155px; display:flex; align-items:center; justify-content:space-between; padding:1.2rem 1.4rem; gap:1rem; position:relative; overflow:hidden; }
-        .preview-hero-bg { position:absolute; inset:0; object-fit:cover; opacity:.35; width:100%; height:100%; }
-        .preview-hero-content { position:relative; z-index:1; }
-        .preview-hero-badge { font-size:.58rem; font-weight:800; padding:2px 8px; border-radius:100px; margin-bottom:6px; display:inline-block; }
-        .preview-hero-title { font-size:.88rem; font-weight:800; color:#fff; line-height:1.2; margin-bottom:4px; }
-        .preview-hero-sub   { font-size:.67rem; color:rgba(255,255,255,.55); margin-bottom:10px; }
-        .preview-hero-btn   { font-size:.63rem; font-weight:700; padding:5px 12px; border-radius:6px; display:inline-block; color:#fff; }
 
         /* ── ANIMATION ───────────────────────────────────────── */
         @keyframes fadeUp { from{opacity:0;transform:translateY(11px)} to{opacity:1;transform:translateY(0)} }
@@ -1002,10 +1076,6 @@ $icon_options = [
             <span><?= $item['label'] ?></span>
             <?php if ($item['page']==='orders' && $pending_count>0): ?><span class="nav-badge"><?= $pending_count ?></span><?php endif; ?>
             <?php if ($item['page']==='categories' && count($orphan_cats)>0): ?><span class="nav-badge"><?= count($orphan_cats) ?></span><?php endif; ?>
-            <?php if ($item['page']==='advertisements'): ?>
-                <?php $inactive_badge = count(array_filter($db_ads, fn($a) => !$a['is_active'])); ?>
-                <?php if ($inactive_badge > 0): ?><span class="nav-badge"><?= $inactive_badge ?></span><?php endif; ?>
-            <?php endif; ?>
             <?php if ($item['page']==='ticker' && !$ticker_enabled): ?><span class="nav-badge">OFF</span><?php endif; ?>
         </a>
         <?php endforeach; ?>
@@ -1030,7 +1100,7 @@ $icon_options = [
 <div class="main">
     <header class="topbar">
         <div>
-            <?php $ptitles=['dashboard'=>'Dashboard','products'=>'Products','orders'=>'Orders','customers'=>'Customers','categories'=>'Categories','ticker'=>'Ticker Bar','advertisements'=>'Ads & Banners','reports'=>'Reports','settings'=>'Settings']; ?>
+            <?php $ptitles=['dashboard'=>'Dashboard','products'=>'Products','orders'=>'Orders','customers'=>'Customers','categories'=>'Categories','ticker'=>'Ticker Bar','media'=>'Media','reports'=>'Reports','settings'=>'Settings']; ?>
             <div class="tb-title"><?= $ptitles[$active]??'Dashboard' ?></div>
             <div class="tb-bc">IT Shop.LK / <?= ucfirst($active) ?>
                 <span class="role-chip <?= $admin_role ?>" style="margin-left:6px">
@@ -1082,7 +1152,7 @@ $icon_options = [
                 ['Total Products',  $agg['total_products'],           ($agg['low_stock']??0).' low stock',false,'fa-box','#0cb100'],
                 ['Orders (All)',    $order_stats['total_orders'],      ($order_stats['today']??0).' today',  true,'fa-bag-shopping','#3b82f6'],
                 ['Pending Orders',  $pending_count,                    'awaiting action',                   ($pending_count===0),'fa-clock','#f59e0b'],
-                ['Active Ads',      $active_ads,                       $inactive_ads.' inactive',            true,'fa-rectangle-ad','#8b5cf6'],
+                ['Hero Slides',     $active_hero_slides,               count($db_hero_slides).' total',       true,'fa-panorama','#8b5cf6'],
             ];
             foreach ($scards as $i=>$s): ?>
             <div class="stat-c" style="animation-delay:<?= $i*55 ?>ms">
@@ -1165,7 +1235,6 @@ $icon_options = [
                     <div>
                         <div style="font-size:.92rem;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:8px">
                             Ticker Bar
-                            <!-- Global toggle pill — clicking submits the form -->
                             <form method="POST" style="display:inline;margin:0" id="dashTickerToggleForm">
                                 <input type="hidden" name="_action"    value="toggle_ticker_global">
                                 <input type="hidden" name="_back_page" value="dashboard">
@@ -1192,8 +1261,6 @@ $icon_options = [
             </div>
 
             <div class="db-ticker-body">
-
-                <!-- Live preview strip -->
                 <div class="db-ticker-preview" id="dashTickerBar"
                      style="background:<?= htmlspecialchars($ticker_color) ?>;<?= !$ticker_enabled ? 'opacity:.38;filter:grayscale(.8)' : '' ?>">
                     <div class="db-ticker-preview-label">
@@ -1223,7 +1290,6 @@ $icon_options = [
                     </div>
                 </div>
 
-                <!-- Message rows with inline toggle + edit -->
                 <?php if ($db_ticker_items): ?>
                 <div class="db-msg-list">
                     <?php foreach ($db_ticker_items as $ti):
@@ -1242,7 +1308,6 @@ $icon_options = [
                         </div>
                         <?php endif; ?>
                         <div class="db-msg-acts">
-                            <!-- Toggle on/off -->
                             <form method="POST" style="display:inline">
                                 <input type="hidden" name="_action"   value="toggle_ticker_item">
                                 <input type="hidden" name="ticker_id" value="<?= $ti['id'] ?>">
@@ -1253,12 +1318,10 @@ $icon_options = [
                                     <i class="fas fa-<?= $ti['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
                                 </button>
                             </form>
-                            <!-- Edit -->
                             <button class="ab edit" title="Edit message"
                                     onclick="openEditTicker(<?= htmlspecialchars(json_encode($t_edit)) ?>)">
                                 <i class="fas fa-pen"></i>
                             </button>
-                            <!-- Delete -->
                             <form method="POST" style="display:inline"
                                   onsubmit="return confirm('Delete this ticker message?')">
                                 <input type="hidden" name="_action"   value="delete_ticker">
@@ -1277,33 +1340,70 @@ $icon_options = [
                     No ticker messages yet. Click <strong>Add Message</strong> to create your first one.
                 </div>
                 <?php endif; ?>
-
             </div>
         </div>
 
-        <!-- Active Ads Quick View on Dashboard -->
-        <?php if ($db_ads): ?>
+        <!-- Hero Slides Quick View -->
         <div class="cc" style="margin-bottom:13px">
-            <h3>Active Ads Overview</h3>
-            <p><?= $active_ads ?> running · <a href="?page=advertisements" style="color:var(--accent)">Manage all →</a></p>
-            <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:.4rem">
-                <?php foreach (array_filter($db_ads, fn($a)=>$a['is_active']) as $ad):
-                    $pi = $ad_positions[$ad['position']] ?? ['color'=>'#6b7280','label'=>ucfirst($ad['position'])]; ?>
-                <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border-radius:var(--r-md);padding:7px 11px;flex:1;min-width:200px">
-                    <?php if ($ad['image']): ?>
-                    <img src="../<?= htmlspecialchars($ad['image']) ?>" style="width:38px;height:28px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem">
+                <div>
+                    <h3>Hero Slider</h3>
+                    <p style="margin:0"><?= $active_hero_slides ?> active slide<?= $active_hero_slides!=1?'s':'' ?> · <a href="?page=media&tab=hero_slides" style="color:var(--accent)">Manage all →</a></p>
+                </div>
+                <button class="btn-p btn-sm" onclick="openModal('addHeroSlideModal')"><i class="fas fa-plus"></i> Add Slide</button>
+            </div>
+            <?php if ($db_hero_slides): ?>
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+                <?php foreach (array_slice($db_hero_slides,0,4) as $s): ?>
+                <div style="flex:1;min-width:180px;background:var(--surface);border-radius:var(--r-md);overflow:hidden;position:relative;opacity:<?= $s['is_active'] ? '1' : '.5' ?>">
+                    <?php if ($s['image_url']): ?>
+                    <img src="../<?= htmlspecialchars($s['image_url']) ?>" style="width:100%;height:65px;object-fit:cover" onerror="this.parentNode.style.background='#e8e8f0';this.remove()">
                     <?php else: ?>
-                    <div style="width:38px;height:28px;background:<?= $pi['color'] ?>22;border-radius:5px;display:flex;align-items:center;justify-content:center;color:<?= $pi['color'] ?>;font-size:.75rem"><i class="fas fa-image"></i></div>
+                    <div style="height:65px;background:linear-gradient(135deg,#1a1a2e,#111);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.3);font-size:1.5rem"><i class="fas fa-image"></i></div>
                     <?php endif; ?>
-                    <div style="min-width:0">
-                        <div style="font-size:.78rem;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($ad['title']) ?></div>
-                        <div style="font-size:.65rem;color:<?= $pi['color'] ?>;font-weight:700"><?= $pi['label'] ?></div>
+                    <div style="padding:5px 8px">
+                        <div style="font-size:.74rem;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($s['title'] ?: 'Slide #'.$s['id']) ?></div>
+                        <div style="font-size:.63rem;color:<?= $s['is_active'] ? '#15803d' : '#dc2626' ?>;font-weight:700"><?= $s['is_active'] ? '● Active' : '● Inactive' ?></div>
                     </div>
                 </div>
                 <?php endforeach; ?>
             </div>
+            <?php else: ?>
+            <div style="text-align:center;padding:1.2rem;color:var(--ink-muted);font-size:.82rem">
+                <i class="fas fa-panorama" style="font-size:1.5rem;display:block;margin-bottom:.4rem;opacity:.2"></i>
+                No hero slides yet. Click <strong>Add Slide</strong> to create your first one.
+            </div>
+            <?php endif; ?>
         </div>
-        <?php endif; ?>
+
+        <!-- Popup Images Quick View -->
+        <div class="cc" style="margin-bottom:13px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem">
+                <div>
+                    <h3>Popup Images</h3>
+                    <p style="margin:0"><?= $active_popup_images ?> active image<?= $active_popup_images!=1?'s':'' ?> · <a href="?page=media&tab=popup_images" style="color:var(--accent)">Manage all →</a></p>
+                </div>
+                <button class="btn-p btn-sm" onclick="openModal('addPopupImageModal')"><i class="fas fa-plus"></i> Add Image</button>
+            </div>
+            <?php if ($db_popup_images): ?>
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+                <?php foreach (array_slice($db_popup_images,0,4) as $pi): ?>
+                <div style="flex:1;min-width:140px;background:var(--surface);border-radius:var(--r-md);overflow:hidden;opacity:<?= $pi['is_active'] ? '1' : '.5' ?>">
+                    <img src="../<?= htmlspecialchars($pi['image_src']) ?>" style="width:100%;height:65px;object-fit:cover;display:block" onerror="this.parentNode.style.background='#e8e8f0';this.remove()">
+                    <div style="padding:5px 8px">
+                        <div style="font-size:.72rem;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($pi['alt_text'] ?: 'Popup #'.$pi['id']) ?></div>
+                        <div style="font-size:.62rem;color:<?= $pi['is_active'] ? '#15803d' : '#dc2626' ?>;font-weight:700"><?= $pi['is_active'] ? '● Active' : '● Inactive' ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php else: ?>
+            <div style="text-align:center;padding:1.2rem;color:var(--ink-muted);font-size:.82rem">
+                <i class="fas fa-window-maximize" style="font-size:1.5rem;display:block;margin-bottom:.4rem;opacity:.2"></i>
+                No popup images yet. Click <strong>Add Image</strong> to create your first one.
+            </div>
+            <?php endif; ?>
+        </div>
 
         <div class="tc">
             <div class="tc-hdr">
@@ -1691,7 +1791,6 @@ $icon_options = [
                 <p><?= count($db_ticker_items) ?> messages · <?= $ticker_active_count ?> active · shown below the navbar on all pages</p>
             </div>
             <div class="pg-hdr-r">
-                <!-- Global on/off -->
                 <form method="POST" style="display:inline">
                     <input type="hidden" name="_action" value="toggle_ticker_global">
                     <input type="hidden" name="_back_page" value="ticker">
@@ -1704,7 +1803,6 @@ $icon_options = [
             </div>
         </div>
 
-        <!-- Stats row -->
         <div class="ad-stats" style="margin-bottom:1.3rem">
             <?php $tss = [
                 ['Total Messages', count($db_ticker_items),   'fa-list',         '#0cb100'],
@@ -1723,7 +1821,6 @@ $icon_options = [
             <?php endforeach; ?>
         </div>
 
-        <!-- Live preview -->
         <div class="cc" style="margin-bottom:1.3rem">
             <h3>Live Preview</h3>
             <p>Hover to pause scroll · this mirrors exactly what visitors see</p>
@@ -1756,48 +1853,32 @@ $icon_options = [
             <?php endif; ?>
         </div>
 
-        <!-- Settings card -->
         <div class="sc" style="margin-bottom:1.3rem">
             <div class="sc-hdr"><i class="fas fa-sliders"></i> Ticker Settings</div>
             <form method="POST" action="?page=ticker">
                 <input type="hidden" name="_action" value="save_ticker_settings">
                 <div class="sc-row">
-                    <div class="sc-i">
-                        <strong>Global On/Off</strong>
-                        <span>Show or hide the ticker bar site-wide</span>
-                    </div>
-                    <label class="toggle">
-                        <input type="checkbox" name="ticker_enabled" <?= $ticker_enabled ? 'checked' : '' ?>>
-                        <span class="tgl-sl"></span>
-                    </label>
+                    <div class="sc-i"><strong>Global On/Off</strong><span>Show or hide the ticker bar site-wide</span></div>
+                    <label class="toggle"><input type="checkbox" name="ticker_enabled" <?= $ticker_enabled ? 'checked' : '' ?>><span class="tgl-sl"></span></label>
                 </div>
                 <div class="sc-row">
-                    <div class="sc-i">
-                        <strong>Scroll Speed</strong>
-                        <span>Animation duration in seconds — lower = faster</span>
-                    </div>
+                    <div class="sc-i"><strong>Scroll Speed</strong><span>Animation duration in seconds — lower = faster</span></div>
                     <div style="display:flex;align-items:center;gap:9px">
-                        <input type="range" name="ticker_speed" id="tickerSpeedRange"
-                               min="10" max="120" value="<?= $ticker_speed ?>"
+                        <input type="range" name="ticker_speed" id="tickerSpeedRange" min="10" max="120" value="<?= $ticker_speed ?>"
                                style="width:130px;accent-color:var(--accent)"
                                oninput="document.getElementById('tickerSpeedVal').textContent=this.value+'s'">
                         <span id="tickerSpeedVal" style="font-size:.82rem;font-weight:700;color:var(--ink);min-width:32px"><?= $ticker_speed ?>s</span>
                     </div>
                 </div>
                 <div class="sc-row">
-                    <div class="sc-i">
-                        <strong>Bar Colour</strong>
-                        <span>Background colour of the ticker strip</span>
-                    </div>
+                    <div class="sc-i"><strong>Bar Colour</strong><span>Background colour of the ticker strip</span></div>
                     <div style="display:flex;align-items:center;gap:9px">
                         <input type="color" name="ticker_color" id="tickerColorPicker"
                                value="<?= htmlspecialchars($ticker_color) ?>"
                                style="width:44px;height:34px;padding:2px;border-radius:6px;border:1.5px solid rgba(10,10,15,.1);cursor:pointer"
                                oninput="updateTickerPreviewColor(this.value);document.getElementById('tickerColorText').value=this.value">
-                        <input type="text" id="tickerColorText" class="f-input" value="<?= htmlspecialchars($ticker_color) ?>"
-                               style="width:105px"
+                        <input type="text" id="tickerColorText" class="f-input" value="<?= htmlspecialchars($ticker_color) ?>" style="width:105px"
                                oninput="if(/^#[0-9a-f]{6}$/i.test(this.value)){document.getElementById('tickerColorPicker').value=this.value;updateTickerPreviewColor(this.value)}">
-                        <!-- Quick colour swatches -->
                         <div style="display:flex;gap:5px;flex-wrap:wrap">
                             <?php foreach (['#3b5bdb','#0cb100','#e63946','#f59e0b','#8b5cf6','#0891b2','#0d0d14','#be185d'] as $sw): ?>
                             <div class="color-swatch" style="background:<?= $sw ?>" title="<?= $sw ?>"
@@ -1813,9 +1894,8 @@ $icon_options = [
             </form>
         </div>
 
-        <!-- Ticker messages grid -->
         <div class="pg-hdr" style="margin-bottom:.8rem">
-            <div class="pg-hdr-l"><h3 style="font-size:1rem;font-weight:800">Ticker Messages</h3><p style="font-size:.79rem;color:var(--ink-muted)">Drag to reorder (sort by changing the order number) · toggle to show/hide individual messages</p></div>
+            <div class="pg-hdr-l"><h3 style="font-size:1rem;font-weight:800">Ticker Messages</h3><p style="font-size:.79rem;color:var(--ink-muted)">Toggle to show/hide individual messages</p></div>
             <button class="btn-p btn-sm" onclick="openModal('addTickerModal')"><i class="fas fa-plus"></i> Add Message</button>
         </div>
 
@@ -1876,7 +1956,6 @@ $icon_options = [
         </div>
         <?php endif; ?>
 
-        <!-- All messages table -->
         <div class="tc">
             <div class="tc-hdr">
                 <div><h3>All Messages</h3><p>Full list with inline controls</p></div>
@@ -1933,218 +2012,270 @@ $icon_options = [
         </div>
 
 
-        <?php /* ─────────── ADVERTISEMENTS ─────────── */ ?>
-        <?php elseif ($active==='advertisements'): ?>
+        <?php /* ─────────── MEDIA (Hero Slides + Popup Images) ─────────── */ ?>
+        <?php elseif ($active==='media'): ?>
 
         <div class="pg-hdr">
             <div class="pg-hdr-l">
-                <h2>Ads & Banners</h2>
-                <p><?= count($db_ads) ?> total · <?= $active_ads ?> active · <?= $inactive_ads ?> inactive · displayed on homepage</p>
+                <h2>Media</h2>
+                <p>Manage hero slider and popup images</p>
             </div>
             <div class="pg-hdr-r">
-                <button class="btn-o btn-sm" onclick="exportTable('adTable')"><i class="fas fa-download"></i> Export CSV</button>
-                <button class="btn-p" onclick="openModal('addAdModal')"><i class="fas fa-plus"></i> New Ad</button>
+                <?php if ($active_tab === 'hero_slides'): ?>
+                <button class="btn-p" onclick="openModal('addHeroSlideModal')"><i class="fas fa-plus"></i> Add Slide</button>
+                <?php else: ?>
+                <button class="btn-p" onclick="openModal('addPopupImageModal')"><i class="fas fa-plus"></i> Add Popup Image</button>
+                <?php endif; ?>
             </div>
         </div>
 
-        <!-- Ad Stats -->
+        <!-- Sub-tabs -->
+        <div class="sub-tabs">
+            <a href="?page=media&tab=hero_slides"  class="sub-tab <?= $active_tab==='hero_slides'?'active':'' ?>"><i class="fas fa-panorama"></i> Hero Slider</a>
+            <a href="?page=media&tab=popup_images" class="sub-tab <?= $active_tab==='popup_images'?'active':'' ?>"><i class="fas fa-window-maximize"></i> Popup Images</a>
+        </div>
+
+        <?php if ($active_tab === 'hero_slides'): ?>
+        <!-- ══ HERO SLIDES TAB ══ -->
+
         <div class="ad-stats">
-            <?php
-            $adstats = [
-                ['Total Ads',    count($db_ads),    'fa-rectangle-ad',  '#0cb100'],
-                ['Active',       $active_ads,       'fa-circle-check',  '#3b82f6'],
-                ['Inactive',     $inactive_ads,     'fa-circle-pause',  '#f59e0b'],
-                ['Hero Banners', count($ads_by_position['hero'] ?? []), 'fa-panorama', '#8b5cf6'],
+            <?php $hstats=[
+                ['Total Slides',  count($db_hero_slides),  'fa-panorama',    '#0cb100'],
+                ['Active',        $active_hero_slides,     'fa-circle-check','#3b82f6'],
+                ['Inactive',      count($db_hero_slides)-$active_hero_slides,'fa-circle-pause','#f59e0b'],
             ];
-            foreach ($adstats as $s): ?>
+            foreach ($hstats as $s): ?>
             <div class="ad-stat">
                 <div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div>
-                <div>
-                    <div class="ad-stat-l"><?= $s[0] ?></div>
-                    <div class="ad-stat-v"><?= $s[1] ?></div>
-                </div>
+                <div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div>
             </div>
             <?php endforeach; ?>
         </div>
 
-        <!-- Ads grouped by position -->
-        <?php foreach ($ad_positions as $pos_key => $pos):
-            $pos_ads = $ads_by_position[$pos_key] ?? []; ?>
-        <div class="pos-section">
-            <div class="pos-hdr">
-                <div class="pos-hdr-ico" style="background:<?= $pos['color'] ?>18;color:<?= $pos['color'] ?>">
-                    <i class="fas <?= $pos['icon'] ?>"></i>
+        <div class="cc" style="margin-bottom:1.2rem">
+            <h3>Live Preview</h3>
+            <p>Approximate appearance of your hero slider</p>
+            <div style="border-radius:var(--r-md);overflow:hidden;background:#0d0d14;min-height:120px;position:relative;display:flex;align-items:center;justify-content:center">
+                <?php $first_active_slide = null; foreach ($db_hero_slides as $s) { if ($s['is_active']) { $first_active_slide = $s; break; } } ?>
+                <?php if ($first_active_slide && $first_active_slide['image_url']): ?>
+                <img src="../<?= htmlspecialchars($first_active_slide['image_url']) ?>" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.45" onerror="this.remove()">
+                <?php endif; ?>
+                <div style="position:relative;z-index:1;text-align:center;padding:1.5rem">
+                    <?php if ($first_active_slide): ?>
+                    <div style="font-size:.62rem;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.4rem">● Live</div>
+                    <div style="font-size:1rem;font-weight:800;color:#fff;margin-bottom:.3rem"><?= htmlspecialchars($first_active_slide['title'] ?: 'Hero Slide') ?></div>
+                    <div style="font-size:.74rem;color:rgba(255,255,255,.55)"><?= htmlspecialchars($first_active_slide['subtitle']) ?></div>
+                    <?php else: ?>
+                    <div style="color:rgba(255,255,255,.25);font-size:.85rem">No active slides — add one below</div>
+                    <?php endif; ?>
                 </div>
-                <div>
-                    <strong><?= $pos['label'] ?></strong>
-                    <span style="display:block;margin-top:1px"><?= $pos['desc'] ?></span>
-                </div>
-                <span class="pos-count" style="background:<?= $pos['color'] ?>18;color:<?= $pos['color'] ?>"><?= count($pos_ads) ?> ad<?= count($pos_ads)!=1?'s':'' ?></span>
-                <button class="btn-p btn-sm" style="background:<?= $pos['color'] ?>;box-shadow:0 2px 10px <?= $pos['color'] ?>44;margin-left:6px"
-                        onclick="openAddAdForPosition('<?= $pos_key ?>')">
-                    <i class="fas fa-plus"></i> Add
-                </button>
             </div>
-
-            <?php if (empty($pos_ads)): ?>
-            <div style="background:var(--card);border-radius:var(--r-md);border:2px dashed rgba(10,10,15,.1);padding:1.5rem;text-align:center;color:var(--ink-muted);font-size:.82rem">
-                <i class="fas <?= $pos['icon'] ?>" style="font-size:1.5rem;margin-bottom:.4rem;display:block;opacity:.2"></i>
-                No ads for this position yet. Click <strong>Add</strong> to create one.
-            </div>
-            <?php else: ?>
-            <div class="ad-cards">
-                <?php foreach ($pos_ads as $i => $ad):
-                    $ad_is_active = (bool)$ad['is_active'];
-                    $pi = $ad_positions[$ad['position']] ?? ['color' => '#6b7280', 'label' => ucfirst($ad['position'])];
-                    $edit_data = [
-                        'id' => $ad['id'], 'title' => $ad['title'], 'subtitle' => $ad['subtitle'],
-                        'image' => $ad['image'], 'link_url' => $ad['link_url'], 'position' => $ad['position'],
-                        'badge_text' => $ad['badge_text'], 'btn_text' => $ad['btn_text'],
-                        'btn_color' => $ad['btn_color'], 'is_active' => $ad['is_active'], 'sort_order' => $ad['sort_order'],
-                    ];
-                ?>
-                <div class="ad-card <?= $ad_is_active ? '' : 'inactive' ?>" style="animation-delay:<?= $i*40 ?>ms">
-                    <div class="ad-img-wrap">
-                        <?php if ($ad['image']): ?>
-                        <img src="../<?= htmlspecialchars($ad['image']) ?>" alt="" onerror="this.parentNode.innerHTML='<div class=ad-img-ph><i class=fas\ fa-image></i></div>'">
-                        <?php else: ?>
-                        <div class="ad-img-ph"><i class="fas fa-image"></i></div>
-                        <?php endif; ?>
-                        <span class="ad-status-pill" style="background:<?= $ad_is_active ? '#dcfce7' : '#fee2e2' ?>;color:<?= $ad_is_active ? '#15803d' : '#dc2626' ?>">
-                            <i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i>
-                            <?= $ad_is_active ? 'Active' : 'Inactive' ?>
-                        </span>
-                        <span class="ad-pos-pill"><?= htmlspecialchars($pi['label']) ?></span>
-                        <?php if ($ad['sort_order']): ?><span class="ad-sort-pill">Order #<?= $ad['sort_order'] ?></span><?php endif; ?>
-                    </div>
-                    <div class="ad-body">
-                        <strong title="<?= htmlspecialchars($ad['title']) ?>"><?= htmlspecialchars($ad['title']) ?></strong>
-                        <div class="sub"><?= htmlspecialchars($ad['subtitle'] ?: '—') ?></div>
-                        <div class="ad-meta">
-                            <?php if ($ad['badge_text']): ?>
-                            <span class="ad-meta-tag"><i class="fas fa-tag"></i><?= htmlspecialchars($ad['badge_text']) ?></span>
-                            <?php endif; ?>
-                            <?php if ($ad['btn_text']): ?>
-                            <span class="ad-meta-tag" style="background:<?= htmlspecialchars($ad['btn_color']) ?>22;color:<?= htmlspecialchars($ad['btn_color']) ?>">
-                                <i class="fas fa-arrow-pointer"></i><?= htmlspecialchars($ad['btn_text']) ?>
-                            </span>
-                            <?php endif; ?>
-                            <?php if ($ad['link_url']): ?>
-                            <span class="ad-meta-tag"><i class="fas fa-link"></i><?= htmlspecialchars(substr($ad['link_url'],0,20)) ?><?= strlen($ad['link_url'])>20?'…':'' ?></span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="ad-foot">
-                        <span style="font-size:.7rem;color:var(--ink-muted)">
-                            <i class="fas fa-calendar" style="margin-right:3px"></i>
-                            <?= date('d M Y', strtotime($ad['created_at'])) ?>
-                        </span>
-                        <div class="ad-actions">
-                            <button class="ab" title="Preview" onclick="openAdPreview(<?= htmlspecialchars(json_encode($edit_data)) ?>)"><i class="fas fa-eye"></i></button>
-                            <form method="POST" style="display:inline">
-                                <input type="hidden" name="_action" value="toggle_ad">
-                                <input type="hidden" name="ad_id" value="<?= $ad['id'] ?>">
-                                <button type="submit" class="ab <?= $ad_is_active ? 'warn' : '' ?>" title="<?= $ad_is_active ? 'Deactivate' : 'Activate' ?>">
-                                    <i class="fas fa-<?= $ad_is_active ? 'pause' : 'play' ?>"></i>
-                                </button>
-                            </form>
-                            <button class="ab edit" title="Edit" onclick="openEditAd(<?= htmlspecialchars(json_encode($edit_data)) ?>)">
-                                <i class="fas fa-pen"></i>
-                            </button>
-                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete ad #<?= $ad['id'] ?>?')">
-                                <input type="hidden" name="_action" value="delete_ad">
-                                <input type="hidden" name="ad_id" value="<?= $ad['id'] ?>">
-                                <button type="submit" class="ab del" title="Delete"><i class="fas fa-trash"></i></button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-                <?php endforeach; ?>
+            <?php if ($active_hero_slides > 1): ?>
+            <div style="text-align:center;margin-top:.6rem;font-size:.73rem;color:var(--ink-muted)">
+                <i class="fas fa-images" style="margin-right:4px"></i> <?= $active_hero_slides ?> slides will rotate automatically
             </div>
             <?php endif; ?>
         </div>
-        <?php endforeach; ?>
 
-        <!-- All Ads Table -->
-        <div class="tc" style="margin-top:.5rem">
-            <div class="tc-hdr">
-                <div><h3>All Advertisements</h3><p>Complete list — toggle, edit, or delete inline</p></div>
-                <input type="text" class="tbl-s" placeholder="Search ads…" id="adSearch" style="width:185px">
+        <?php if (empty($db_hero_slides)): ?>
+        <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)">
+            <i class="fas fa-panorama" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>
+            No hero slides yet. Click <strong>Add Slide</strong> to create your first one.
+        </div>
+        <?php else: ?>
+        <div class="media-cards">
+            <?php foreach ($db_hero_slides as $i => $slide):
+                $s_edit = ['id'=>$slide['id'],'image_url'  => $slide['image_url'],'link_url'   => $slide['link_url'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
+            ?>
+            <div class="media-card <?= $slide['is_active'] ? '' : 'inactive' ?>" style="animation-delay:<?= $i*40 ?>ms">
+                <div class="media-img-wrap">
+                    <?php if ($slide['image_url']): ?>
+                    <img src="../<?= htmlspecialchars($slide['image_url']) ?>" alt="" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-panorama></i></div>'">
+                    <?php else: ?>
+                    <div class="media-img-ph"><i class="fas fa-panorama"></i></div>
+                    <?php endif; ?>
+                    <span class="ad-status-pill" style="background:<?= $slide['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $slide['is_active']?'#15803d':'#dc2626' ?>">
+                        <i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i>
+                        <?= $slide['is_active'] ? 'Active' : 'Inactive' ?>
+                    </span>
+                    <span class="ad-sort-pill">Order #<?= $slide['sort_order'] ?></span>
+                </div>
+                <div class="media-card-body">
+                    <strong><?= htmlspecialchars($slide['title'] ?: 'Slide #'.$slide['id']) ?></strong>
+                    <div class="sub"><?= htmlspecialchars($slide['subtitle'] ?: '—') ?></div>
+                    <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <?php if ($slide['btn_text']): ?><span class="ad-meta-tag"><i class="fas fa-arrow-pointer"></i><?= htmlspecialchars($slide['btn_text']) ?></span><?php endif; ?>
+                        <?php if ($slide['btn_ghost_text']): ?><span class="ad-meta-tag"><?= htmlspecialchars($slide['btn_ghost_text']) ?></span><?php endif; ?>
+                        <?php if ($slide['link_url']): ?><span class="ad-meta-tag"><i class="fas fa-link"></i><?= htmlspecialchars(substr($slide['link_url'],0,18)) ?>…</span><?php endif; ?>
+                    </div>
+                </div>
+                <div class="media-card-foot">
+                    <span style="font-size:.68rem;color:var(--ink-muted)"><i class="fas fa-calendar" style="margin-right:3px"></i><?= date('d M Y', strtotime($slide['created_at'])) ?></span>
+                    <div style="display:flex;gap:4px">
+                        <form method="POST" style="display:inline">
+                            <input type="hidden" name="_action" value="toggle_hero_slide">
+                            <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
+                            <button type="submit" class="ab <?= $slide['is_active'] ? 'warn' : '' ?>" title="<?= $slide['is_active']?'Deactivate':'Activate' ?>">
+                                <i class="fas fa-<?= $slide['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
+                            </button>
+                        </form>
+                        <button class="ab edit" title="Edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
+                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this hero slide?')">
+                            <input type="hidden" name="_action" value="delete_hero_slide">
+                            <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
+                            <button type="submit" class="ab del"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </div>
+                </div>
             </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <div class="tc">
+            <div class="tc-hdr"><div><h3>All Hero Slides</h3><p>Manage the homepage hero slider images</p></div></div>
             <div class="tbl-wrap">
-            <?php if ($db_ads): ?>
-            <table id="adTable">
-                <thead><tr><th>ID</th><th>Image</th><th>Title / Subtitle</th><th>Position</th><th>Button</th><th>Link</th><th>Order</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+            <table>
+                <thead><tr><th>ID</th><th>Preview</th><th>Title</th><th>Subtitle</th><th>Buttons</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                    <?php foreach ($db_ads as $ad):
-                        $pi = $ad_positions[$ad['position']] ?? ['label' => ucfirst($ad['position']), 'color' => '#6b7280'];
-                        $edit_data = [
-                            'id' => $ad['id'], 'title' => $ad['title'], 'subtitle' => $ad['subtitle'],
-                            'image' => $ad['image'], 'link_url' => $ad['link_url'], 'position' => $ad['position'],
-                            'badge_text' => $ad['badge_text'], 'btn_text' => $ad['btn_text'],
-                            'btn_color' => $ad['btn_color'], 'is_active' => $ad['is_active'], 'sort_order' => $ad['sort_order'],
-                        ];
+                    <?php if ($db_hero_slides): foreach ($db_hero_slides as $slide):
+                        $s_edit = ['id'=>$slide['id'],'title'=>$slide['title'],'subtitle'=>$slide['subtitle'],'image_url'=>$slide['image_url'],'link_url'=>$slide['link_url'],'btn_text'=>$slide['btn_text'],'btn_ghost_text'=>$slide['btn_ghost_text'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
                     ?>
                     <tr>
-                        <td class="muted"><?= $ad['id'] ?></td>
-                        <td>
-                            <?php if ($ad['image']): ?>
-                            <img src="../<?= htmlspecialchars($ad['image']) ?>" style="width:44px;height:32px;object-fit:cover;border-radius:5px;background:var(--surface)" onerror="this.style.display='none'">
-                            <?php else: ?>
-                            <div style="width:44px;height:32px;background:var(--surface);border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:.7rem"><i class="fas fa-image"></i></div>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <strong><?= htmlspecialchars($ad['title']) ?></strong>
-                            <?php if ($ad['subtitle']): ?>
-                            <div style="font-size:.72rem;color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:175px"><?= htmlspecialchars($ad['subtitle']) ?></div>
-                            <?php endif; ?>
-                        </td>
-                        <td><span class="sb" style="background:<?= $pi['color'] ?>18;color:<?= $pi['color'] ?>;font-size:.67rem"><?= htmlspecialchars($pi['label']) ?></span></td>
-                        <td>
-                            <?php if ($ad['btn_text']): ?>
-                            <span style="display:inline-flex;align-items:center;gap:4px;font-size:.71rem;font-weight:700;padding:2px 8px;border-radius:100px;background:<?= htmlspecialchars($ad['btn_color']) ?>22;color:<?= htmlspecialchars($ad['btn_color']) ?>"><?= htmlspecialchars($ad['btn_text']) ?></span>
-                            <?php else: ?><span class="muted">—</span><?php endif; ?>
-                        </td>
-                        <td class="muted" style="max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                            <?php if ($ad['link_url']): ?>
-                            <a href="<?= htmlspecialchars($ad['link_url']) ?>" target="_blank" style="color:var(--accent);font-size:.74rem"><?= htmlspecialchars(substr($ad['link_url'],0,22)) ?><?= strlen($ad['link_url'])>22?'…':'' ?></a>
-                            <?php else: ?>—<?php endif; ?>
-                        </td>
-                        <td class="muted"><?= $ad['sort_order'] ?></td>
+                        <td class="muted"><?= $slide['id'] ?></td>
+                        <td><?php if ($slide['image_url']): ?><img src="../<?= htmlspecialchars($slide['image_url']) ?>" style="width:56px;height:36px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'"><?php else: ?><div style="width:56px;height:36px;background:var(--surface);border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted)"><i class="fas fa-image"></i></div><?php endif; ?></td>
+                        <td><strong><?= htmlspecialchars($slide['title'] ?: '—') ?></strong></td>
+                        <td class="muted" style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($slide['subtitle'] ?: '—') ?></td>
+                        <td><span style="font-size:.71rem;color:var(--ink-muted)"><?= htmlspecialchars($slide['btn_text']) ?> / <?= htmlspecialchars($slide['btn_ghost_text']) ?></span></td>
+                        <td class="muted"><?= $slide['sort_order'] ?></td>
                         <td>
                             <form method="POST" style="display:inline">
-                                <input type="hidden" name="_action" value="toggle_ad">
-                                <input type="hidden" name="ad_id" value="<?= $ad['id'] ?>">
-                                <button type="submit" class="sb <?= $ad['is_active'] ? 'sa' : 'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700" title="Click to toggle">
-                                    <?= $ad['is_active'] ? '● Active' : '● Inactive' ?>
-                                </button>
+                                <input type="hidden" name="_action" value="toggle_hero_slide">
+                                <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
+                                <button type="submit" class="sb <?= $slide['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $slide['is_active']?'● Active':'● Inactive' ?></button>
                             </form>
                         </td>
-                        <td class="muted"><?= date('d M Y', strtotime($ad['created_at'])) ?></td>
                         <td>
                             <div style="display:flex;gap:4px">
-                                <button class="ab" title="Preview" onclick="openAdPreview(<?= htmlspecialchars(json_encode($edit_data)) ?>)"><i class="fas fa-eye"></i></button>
-                                <button class="ab edit" title="Edit" onclick="openEditAd(<?= htmlspecialchars(json_encode($edit_data)) ?>)"><i class="fas fa-pen"></i></button>
-                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete this ad?')">
-                                    <input type="hidden" name="_action" value="delete_ad">
-                                    <input type="hidden" name="ad_id" value="<?= $ad['id'] ?>">
-                                    <button type="submit" class="ab del" title="Delete"><i class="fas fa-trash"></i></button>
-                                </form>
+                                <button class="ab edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
+                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
                             </div>
                         </td>
                     </tr>
-                    <?php endforeach; ?>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--ink-muted)">No hero slides yet.</td></tr>
+                    <?php endif; ?>
                 </tbody>
             </table>
-            <?php else: ?>
-            <div style="padding:3rem;text-align:center;color:var(--ink-muted)">
-                <i class="fas fa-rectangle-ad" style="font-size:2rem;margin-bottom:.6rem;display:block;opacity:.3"></i>
-                No ads yet. Click <strong>New Ad</strong> to create your first banner.
-            </div>
-            <?php endif; ?>
             </div>
         </div>
+
+        <?php else: /* popup_images tab */ ?>
+        <!-- ══ POPUP IMAGES TAB ══ -->
+
+        <div class="ad-stats">
+            <?php $pstats=[
+                ['Total Images',  count($db_popup_images),  'fa-window-maximize','#0cb100'],
+                ['Active',        $active_popup_images,     'fa-circle-check',   '#3b82f6'],
+                ['Inactive',      count($db_popup_images)-$active_popup_images,'fa-circle-pause','#f59e0b'],
+            ];
+            foreach ($pstats as $s): ?>
+            <div class="ad-stat">
+                <div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div>
+                <div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <div class="db-warn" style="margin-bottom:1rem">
+            <i class="fas fa-info-circle"></i>
+            The popup carousel shows all <strong>active</strong> images in order.
+        </div>
+
+        <?php if (empty($db_popup_images)): ?>
+        <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)">
+            <i class="fas fa-window-maximize" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>
+            No popup images yet. Click <strong>Add Popup Image</strong> to create your first one.
+        </div>
+        <?php else: ?>
+        <div class="media-cards">
+            <?php foreach ($db_popup_images as $i => $pi):
+                $p_edit = ['id'=>$pi['id'],'image_src'=>$pi['image_src'],'alt_text'=>$pi['alt_text'],'link_url'=>$pi['link_url'],'is_active'=>$pi['is_active'],'sort_order'=>$pi['sort_order']];
+            ?>
+            <div class="media-card <?= $pi['is_active'] ? '' : 'inactive' ?>" style="animation-delay:<?= $i*40 ?>ms">
+                <div class="media-img-wrap">
+                    <img src="../<?= htmlspecialchars($pi['image_src']) ?>" alt="<?= htmlspecialchars($pi['alt_text']) ?>" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-image></i></div>'">
+                    <span class="ad-status-pill" style="background:<?= $pi['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $pi['is_active']?'#15803d':'#dc2626' ?>">
+                        <i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i>
+                        <?= $pi['is_active'] ? 'Active' : 'Inactive' ?>
+                    </span>
+                    <span class="ad-sort-pill">Order #<?= $pi['sort_order'] ?></span>
+                </div>
+                <div class="media-card-body">
+                    <strong><?= htmlspecialchars($pi['alt_text'] ?: 'Popup #'.$pi['id']) ?></strong>
+                    <div class="sub"><?= $pi['link_url'] ? '<i class="fas fa-link" style="font-size:.62rem;margin-right:3px"></i>'.htmlspecialchars(substr($pi['link_url'],0,30)) : 'No link' ?></div>
+                </div>
+                <div class="media-card-foot">
+                    <span style="font-size:.68rem;color:var(--ink-muted)"><i class="fas fa-calendar" style="margin-right:3px"></i><?= date('d M Y', strtotime($pi['created_at'])) ?></span>
+                    <div style="display:flex;gap:4px">
+                        <form method="POST" style="display:inline">
+                            <input type="hidden" name="_action" value="toggle_popup_image">
+                            <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
+                            <button type="submit" class="ab <?= $pi['is_active'] ? 'warn' : '' ?>" title="<?= $pi['is_active']?'Deactivate':'Activate' ?>">
+                                <i class="fas fa-<?= $pi['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
+                            </button>
+                        </form>
+                        <button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button>
+                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this popup image?')">
+                            <input type="hidden" name="_action" value="delete_popup_image">
+                            <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
+                            <button type="submit" class="ab del"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <div class="tc">
+            <div class="tc-hdr"><div><h3>All Popup Images</h3><p>Shown in the page-load modal carousel</p></div></div>
+            <div class="tbl-wrap">
+            <table>
+                <thead><tr><th>ID</th><th>Preview</th><th>Alt Text</th><th>Link</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>
+                    <?php if ($db_popup_images): foreach ($db_popup_images as $pi):
+                        $p_edit=['id'=>$pi['id'],'image_src'=>$pi['image_src'],'alt_text'=>$pi['alt_text'],'link_url'=>$pi['link_url'],'is_active'=>$pi['is_active'],'sort_order'=>$pi['sort_order']];
+                    ?>
+                    <tr>
+                        <td class="muted"><?= $pi['id'] ?></td>
+                        <td><img src="../<?= htmlspecialchars($pi['image_src']) ?>" style="width:50px;height:38px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'"></td>
+                        <td><strong><?= htmlspecialchars($pi['alt_text'] ?: '—') ?></strong></td>
+                        <td class="muted" style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= $pi['link_url'] ? '<a href="'.htmlspecialchars($pi['link_url']).'" target="_blank" style="color:var(--accent);font-size:.77rem">'.htmlspecialchars(substr($pi['link_url'],0,25)).'</a>' : '—' ?></td>
+                        <td class="muted"><?= $pi['sort_order'] ?></td>
+                        <td>
+                            <form method="POST" style="display:inline">
+                                <input type="hidden" name="_action" value="toggle_popup_image">
+                                <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
+                                <button type="submit" class="sb <?= $pi['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $pi['is_active']?'● Active':'● Inactive' ?></button>
+                            </form>
+                        </td>
+                        <td>
+                            <div style="display:flex;gap:4px">
+                                <button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button>
+                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--ink-muted)">No popup images yet.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            </div>
+        </div>
+
+        <?php endif; /* end media sub-tabs */ ?>
 
 
         <?php /* ─────────── REPORTS ─────────── */ ?>
@@ -2189,7 +2320,7 @@ $icon_options = [
                     <div class="pw-l"><span><?= htmlspecialchars($cc['name']) ?></span><span><?= $cc['cnt'] ?> products</span></div>
                     <div class="pw-bg"><div class="pw-f" style="width:<?= $pct ?>%"></div></div>
                 </div>
-                <?php endforeach; else: ?><p style="color:var(--ink-muted);font-size:.82rem">No products assigned to categories.</p><?php endif;
+                <?php endforeach; else: ?><p style="color:var(--ink-muted);font-size:.82rem">No products assigned.</p><?php endif;
                 endif; ?>
             </div>
 
@@ -2238,7 +2369,7 @@ $icon_options = [
         </div>
 
 
-        <?php /* ─────────── SETTINGS (superadmin only) ─────────── */ ?>
+        <?php /* ─────────── SETTINGS ─────────── */ ?>
         <?php elseif ($active==='settings'): ?>
 
         <?php if (!$is_superadmin): ?>
@@ -2281,22 +2412,6 @@ $icon_options = [
         </div>
 
         <div class="sc">
-            <div class="sc-hdr"><i class="fas fa-box"></i> Products Page Defaults</div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>Items per Page</strong><span>$items_per_page in products.php</span></div>
-                <input type="number" class="f-input" value="15" min="5" max="60">
-            </div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>Default Sort</strong><span>Default $sort value</span></div>
-                <select class="f-input"><option selected>Name A–Z</option><option>Price: Low → High</option><option>Price: High → Low</option><option>Top Rated</option></select>
-            </div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>Low Stock Threshold</strong><span>stock_count ≤ this → badge</span></div>
-                <input type="number" class="f-input" value="5" min="1" max="50">
-            </div>
-        </div>
-
-        <div class="sc">
             <div class="sc-hdr"><i class="fas fa-users-gear"></i> Admin Accounts</div>
             <div class="sc-row">
                 <div class="sc-i"><strong>Logged-in Account</strong><span><?= htmlspecialchars($admin_email) ?></span></div>
@@ -2306,17 +2421,13 @@ $icon_options = [
                 <div class="sc-i"><strong>New Password</strong><span>Leave blank to keep current</span></div>
                 <input type="password" class="f-input" placeholder="••••••••••">
             </div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>Confirm Password</strong><span></span></div>
-                <input type="password" class="f-input" placeholder="••••••••••">
-            </div>
         </div>
 
         <div class="sc">
             <div class="sc-hdr" style="color:#dc2626"><i class="fas fa-triangle-exclamation" style="color:#ef4444"></i> Danger Zone</div>
             <div class="sc-row">
                 <div class="sc-i"><strong style="color:#dc2626">Clear All Orders</strong><span>Permanently deletes every order record</span></div>
-                <form method="POST" onsubmit="return confirm('Delete ALL orders permanently? This cannot be undone.')">
+                <form method="POST" onsubmit="return confirm('Delete ALL orders permanently?')">
                     <input type="hidden" name="_action" value="clear_orders">
                     <button type="submit" class="btn-p btn-red btn-sm"><i class="fas fa-trash"></i> Clear Orders</button>
                 </form>
@@ -2331,203 +2442,100 @@ $icon_options = [
 </div>
 
 
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- ADD PRODUCT MODAL                                             -->
-<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ══ ADD PRODUCT MODAL ══════════════════════════════════════════════ -->
 <div class="m-overlay" id="addProductModal">
     <div class="modal">
-        <div class="m-hdr">
-            <h3><i class="fas fa-plus" style="color:var(--accent);margin-right:6px"></i>Add New Product</h3>
-            <button class="m-close" onclick="closeModal('addProductModal')"><i class="fas fa-xmark"></i></button>
-        </div>
+        <div class="m-hdr"><h3><i class="fas fa-plus" style="color:var(--accent);margin-right:6px"></i>Add New Product</h3><button class="m-close" onclick="closeModal('addProductModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" enctype="multipart/form-data" action="?page=products">
             <input type="hidden" name="_action" value="add_product">
             <div class="m-body">
                 <div class="fg">
                     <label>Product Image</label>
-                    <div class="img-prev" id="imgPrev">
-                        <div class="iph"><i class="fas fa-image"></i></div>
-                        <img id="imgPrevImg" src="">
-                    </div>
+                    <div class="img-prev" id="imgPrev"><div class="iph"><i class="fas fa-image"></i></div><img id="imgPrevImg" src=""></div>
                     <div class="f-row">
-                        <div>
-                            <input type="file" name="image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFile(this)">
-                            <div class="f-hint">Upload JPG/PNG/WebP</div>
-                        </div>
-                        <div>
-                            <input type="text" name="image_url" class="fc" placeholder="…or paste image/path URL" oninput="prvUrl(this.value)">
-                            <div class="f-hint">e.g. uploads/products/img.jpg</div>
-                        </div>
+                        <div><input type="file" name="image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFile(this)"><div class="f-hint">Upload JPG/PNG/WebP</div></div>
+                        <div><input type="text" name="image_url" class="fc" placeholder="…or paste image/path URL" oninput="prvUrl(this.value)"></div>
                     </div>
                 </div>
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Product Name <span>*</span></label>
-                        <input type="text" name="name" class="fc" placeholder="e.g. ASUS ROG Zephyrus G14" required>
-                    </div>
-                    <div class="fg">
-                        <label>Brand</label>
-                        <input type="text" name="brand" class="fc" placeholder="e.g. ASUS, MSI, Samsung">
-                    </div>
+                    <div class="fg"><label>Product Name <span>*</span></label><input type="text" name="name" class="fc" required></div>
+                    <div class="fg"><label>Brand</label><input type="text" name="brand" class="fc"></div>
                 </div>
                 <div class="fg">
                     <label>Category <span>*</span></label>
                     <?php if (empty($cat_map)): ?>
-                    <div style="background:#fef9c3;border:1px solid #fde047;border-radius:var(--r-md);padding:9px 11px;font-size:.82rem;color:#854d0e">
-                        <i class="fas fa-triangle-exclamation"></i> No categories found. <a href="?page=categories" style="color:inherit;font-weight:800">Create categories first →</a>
-                    </div>
+                    <div style="background:#fef9c3;border:1px solid #fde047;border-radius:var(--r-md);padding:9px 11px;font-size:.82rem;color:#854d0e"><i class="fas fa-triangle-exclamation"></i> No categories. <a href="?page=categories" style="color:inherit;font-weight:800">Create first →</a></div>
                     <input type="hidden" name="category" value="">
                     <?php else: ?>
-                    <select name="category" class="fc" required>
-                        <option value="">— Select category —</option>
-                        <?php foreach ($cat_map as $slug=>$info): ?>
-                        <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <select name="category" class="fc" required><option value="">— Select —</option><?php foreach ($cat_map as $slug=>$info): ?><option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option><?php endforeach; ?></select>
                     <?php endif; ?>
                 </div>
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Price (LKR) <span>*</span></label>
-                        <input type="number" name="price" class="fc" placeholder="e.g. 125000.00" min="0" step="0.01" required>
-                    </div>
-                    <div class="fg">
-                        <label>Original / MRP (LKR)</label>
-                        <input type="number" name="original_price" class="fc" placeholder="Leave blank = no discount" min="0" step="0.01">
-                        <div class="f-hint">Sets the discount % badge on product cards</div>
-                    </div>
+                    <div class="fg"><label>Price (LKR) <span>*</span></label><input type="number" name="price" class="fc" min="0" step="0.01" required></div>
+                    <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" class="fc" min="0" step="0.01"></div>
                 </div>
-                <div class="fg">
-                    <label>Stock Count <span>*</span></label>
-                    <input type="number" name="stock_count" class="fc" value="0" min="0" required>
-                    <div class="f-hint">0 = Out of Stock · 1–5 = Low Stock · 6+ = Active</div>
-                </div>
-                <div class="fg">
-                    <label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label>
-                    <textarea name="specs" class="fc" placeholder="Intel Core i9-14900HX&#10;32GB DDR5 5600MHz&#10;1TB NVMe Gen4 SSD"></textarea>
-                    <div class="f-hint">Each line inserts one row in product_specs.</div>
-                </div>
+                <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" class="fc" value="0" min="0"></div>
+                <div class="fg"><label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label><textarea name="specs" class="fc"></textarea></div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('addProductModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Product</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save</button></div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- EDIT PRODUCT MODAL                                            -->
-<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ══ EDIT PRODUCT MODAL ═══════════════════════════════════════════ -->
 <div class="m-overlay" id="editProductModal">
     <div class="modal">
-        <div class="m-hdr">
-            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Product</h3>
-            <button class="m-close" onclick="closeModal('editProductModal')"><i class="fas fa-xmark"></i></button>
-        </div>
+        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Product</h3><button class="m-close" onclick="closeModal('editProductModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" enctype="multipart/form-data" action="?page=products">
-            <input type="hidden" name="_action"        value="edit_product">
-            <input type="hidden" name="product_id"     id="editProdId">
+            <input type="hidden" name="_action" value="edit_product">
+            <input type="hidden" name="product_id" id="editProdId">
             <input type="hidden" name="existing_image" id="editProdExistingImage">
             <div class="m-body">
                 <div class="fg">
                     <label>Product Image</label>
-                    <div class="img-prev" id="editImgPrev">
-                        <div class="iph" id="editImgPh"><i class="fas fa-image"></i></div>
-                        <img id="editImgPrevImg" src="" style="display:none">
-                    </div>
+                    <div class="img-prev" id="editImgPrev"><div class="iph" id="editImgPh"><i class="fas fa-image"></i></div><img id="editImgPrevImg" src="" style="display:none"></div>
                     <div class="f-row">
-                        <div>
-                            <input type="file" name="image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFileEdit(this)">
-                            <div class="f-hint">Upload to replace current image</div>
-                        </div>
-                        <div>
-                            <input type="text" name="image_url" id="editProdImageUrl" class="fc" placeholder="…or paste image/path URL" oninput="prvUrlEdit(this.value)">
-                            <div class="f-hint">Leave blank to keep existing</div>
-                        </div>
+                        <div><input type="file" name="image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFileEdit(this)"></div>
+                        <div><input type="text" name="image_url" id="editProdImageUrl" class="fc" placeholder="…or paste URL" oninput="prvUrlEdit(this.value)"></div>
                     </div>
                 </div>
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Product Name <span>*</span></label>
-                        <input type="text" name="name" id="editProdName" class="fc" required>
-                    </div>
-                    <div class="fg">
-                        <label>Brand</label>
-                        <input type="text" name="brand" id="editProdBrand" class="fc">
-                    </div>
+                    <div class="fg"><label>Name <span>*</span></label><input type="text" name="name" id="editProdName" class="fc" required></div>
+                    <div class="fg"><label>Brand</label><input type="text" name="brand" id="editProdBrand" class="fc"></div>
                 </div>
                 <div class="fg">
                     <label>Category <span>*</span></label>
-                    <select name="category" id="editProdCategory" class="fc" required>
-                        <option value="">— Select category —</option>
-                        <?php foreach ($cat_map as $slug => $info): ?>
-                        <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <select name="category" id="editProdCategory" class="fc" required><option value="">— Select —</option><?php foreach ($cat_map as $slug=>$info): ?><option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option><?php endforeach; ?></select>
                 </div>
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Price (LKR) <span>*</span></label>
-                        <input type="number" name="price" id="editProdPrice" class="fc" min="0" step="0.01" required>
-                    </div>
-                    <div class="fg">
-                        <label>Original / MRP (LKR)</label>
-                        <input type="number" name="original_price" id="editProdOrigPrice" class="fc" min="0" step="0.01">
-                    </div>
+                    <div class="fg"><label>Price (LKR) <span>*</span></label><input type="number" name="price" id="editProdPrice" class="fc" min="0" step="0.01" required></div>
+                    <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" id="editProdOrigPrice" class="fc" min="0" step="0.01"></div>
                 </div>
-                <div class="fg">
-                    <label>Stock Count</label>
-                    <input type="number" name="stock_count" id="editProdStock" class="fc" value="0" min="0">
-                </div>
-                <div class="fg">
-                    <label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label>
-                    <textarea name="specs" id="editProdSpecs" class="fc" rows="5"></textarea>
-                    <div class="f-hint">Replaces all existing specs on save.</div>
-                </div>
+                <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" id="editProdStock" class="fc" min="0"></div>
+                <div class="fg"><label>Specs</label><textarea name="specs" id="editProdSpecs" class="fc" rows="5"></textarea></div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('editProductModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Product</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- ADD CATEGORY MODAL                                            -->
-<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ══ ADD CATEGORY MODAL ═══════════════════════════════════════════ -->
 <div class="m-overlay" id="addCatModal">
     <div class="modal">
-        <div class="m-hdr">
-            <h3><i class="fas fa-layer-group" style="color:var(--accent);margin-right:6px"></i>Add Category</h3>
-            <button class="m-close" onclick="closeModal('addCatModal')"><i class="fas fa-xmark"></i></button>
-        </div>
+        <div class="m-hdr"><h3><i class="fas fa-layer-group" style="color:var(--accent);margin-right:6px"></i>Add Category</h3><button class="m-close" onclick="closeModal('addCatModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" action="?page=categories">
             <input type="hidden" name="_action" value="add_category">
             <div class="m-body">
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Category Name <span>*</span></label>
-                        <input type="text" name="cat_name" id="addCatName" class="fc" placeholder="e.g. Graphics Cards" required oninput="autoSlug(this,'addCatSlug')">
-                    </div>
-                    <div class="fg">
-                        <label>Slug <span style="color:var(--ink-muted);font-weight:500">(auto-generated)</span></label>
-                        <input type="text" name="cat_slug" id="addCatSlug" class="fc" placeholder="e.g. graphics_cards">
-                        <div class="f-hint">Used as <code>products.category</code> FK</div>
-                    </div>
+                    <div class="fg"><label>Name <span>*</span></label><input type="text" name="cat_name" id="addCatName" class="fc" required oninput="autoSlug(this,'addCatSlug')"></div>
+                    <div class="fg"><label>Slug</label><input type="text" name="cat_slug" id="addCatSlug" class="fc"><div class="f-hint">Used as products.category FK</div></div>
                 </div>
+                <div class="fg"><label>Description</label><textarea name="cat_desc" class="fc"></textarea></div>
                 <div class="fg">
-                    <label>Description</label>
-                    <textarea name="cat_desc" class="fc" placeholder="Optional description…"></textarea>
-                </div>
-                <div class="fg">
-                    <label>Icon <small style="font-weight:500;color:var(--ink-muted)">(FontAwesome class)</small></label>
+                    <label>Icon</label>
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
                         <div class="icon-preview" id="addIconPreview"><i class="fas fa-tag" id="addIconPreviewI"></i></div>
-                        <input type="text" name="cat_icon" id="addCatIcon" class="fc" value="fa-tag" placeholder="fa-tag" oninput="updateIconPreview('add')">
+                        <input type="text" name="cat_icon" id="addCatIcon" class="fc" value="fa-tag" oninput="updateIconPreview('add')">
                     </div>
                     <div class="icon-grid" id="addIconGrid">
                         <?php foreach ($icon_options as $ico): ?>
@@ -2536,49 +2544,30 @@ $icon_options = [
                     </div>
                 </div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('addCatModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Category</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addCatModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save</button></div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- EDIT CATEGORY MODAL                                           -->
-<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ══ EDIT CATEGORY MODAL ══════════════════════════════════════════ -->
 <div class="m-overlay" id="editCatModal">
     <div class="modal">
-        <div class="m-hdr">
-            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Category</h3>
-            <button class="m-close" onclick="closeModal('editCatModal')"><i class="fas fa-xmark"></i></button>
-        </div>
+        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Category</h3><button class="m-close" onclick="closeModal('editCatModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" action="?page=categories">
             <input type="hidden" name="_action" value="edit_category">
-            <input type="hidden" name="cat_id"   id="editCatId">
-            <input type="hidden" name="old_slug"  id="editOldSlug">
+            <input type="hidden" name="cat_id" id="editCatId">
+            <input type="hidden" name="old_slug" id="editOldSlug">
             <div class="m-body">
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Category Name <span>*</span></label>
-                        <input type="text" name="cat_name" id="editCatName" class="fc" required>
-                    </div>
-                    <div class="fg">
-                        <label>Slug</label>
-                        <input type="text" name="cat_slug" id="editCatSlug" class="fc">
-                        <div class="f-hint">⚠ Changing slug renames in products too</div>
-                    </div>
+                    <div class="fg"><label>Name <span>*</span></label><input type="text" name="cat_name" id="editCatName" class="fc" required></div>
+                    <div class="fg"><label>Slug</label><input type="text" name="cat_slug" id="editCatSlug" class="fc"><div class="f-hint">⚠ Changing slug renames in products too</div></div>
                 </div>
-                <div class="fg">
-                    <label>Description</label>
-                    <textarea name="cat_desc" id="editCatDesc" class="fc"></textarea>
-                </div>
+                <div class="fg"><label>Description</label><textarea name="cat_desc" id="editCatDesc" class="fc"></textarea></div>
                 <div class="fg">
                     <label>Icon</label>
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
                         <div class="icon-preview" id="editIconPreview"><i class="fas fa-tag" id="editIconPreviewI"></i></div>
-                        <input type="text" name="cat_icon" id="editCatIcon" class="fc" placeholder="fa-tag" oninput="updateIconPreview('edit')">
+                        <input type="text" name="cat_icon" id="editCatIcon" class="fc" oninput="updateIconPreview('edit')">
                     </div>
                     <div class="icon-grid" id="editIconGrid">
                         <?php foreach ($icon_options as $ico): ?>
@@ -2587,758 +2576,506 @@ $icon_options = [
                     </div>
                 </div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('editCatModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Category</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editCatModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- DELETE CATEGORY MODAL                                         -->
-<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ══ DELETE CATEGORY MODAL ════════════════════════════════════════ -->
 <div class="m-overlay" id="deleteCatModal">
     <div class="modal" style="max-width:440px">
-        <div class="m-hdr">
-            <h3><i class="fas fa-trash" style="color:#ef4444;margin-right:6px"></i>Delete Category</h3>
-            <button class="m-close" onclick="closeModal('deleteCatModal')"><i class="fas fa-xmark"></i></button>
-        </div>
+        <div class="m-hdr"><h3><i class="fas fa-trash" style="color:#ef4444;margin-right:6px"></i>Delete Category</h3><button class="m-close" onclick="closeModal('deleteCatModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" action="?page=categories">
             <input type="hidden" name="_action" value="delete_category">
-            <input type="hidden" name="cat_id"   id="delCatId">
-            <input type="hidden" name="cat_slug"  id="delCatSlug">
+            <input type="hidden" name="cat_id" id="delCatId">
+            <input type="hidden" name="cat_slug" id="delCatSlug">
             <div class="m-body">
                 <p id="delCatMsg" style="font-size:.87rem;color:var(--ink-soft);margin-bottom:1rem"></p>
                 <div class="fg" id="delReassignWrap" style="display:none">
                     <label>Reassign products to:</label>
-                    <select name="reassign_slug" class="fc">
-                        <option value="">— Remove category (leave blank) —</option>
-                        <?php foreach ($db_categories as $cat): ?>
-                        <option value="<?= htmlspecialchars($cat['slug']??slugify($cat['name'])) ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <select name="reassign_slug" class="fc"><option value="">— Remove category —</option><?php foreach ($db_categories as $cat): ?><option value="<?= htmlspecialchars($cat['slug']??slugify($cat['name'])) ?>"><?= htmlspecialchars($cat['name']) ?></option><?php endforeach; ?></select>
                 </div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('deleteCatModal')">Cancel</button>
-                <button type="submit" class="btn-p btn-red"><i class="fas fa-trash"></i> Delete</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('deleteCatModal')">Cancel</button><button type="submit" class="btn-p btn-red"><i class="fas fa-trash"></i> Delete</button></div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- ADD TICKER MODAL                                              -->
-<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ══ ADD TICKER MODAL ═════════════════════════════════════════════ -->
 <div class="m-overlay" id="addTickerModal">
     <div class="modal" style="max-width:540px">
-        <div class="m-hdr">
-            <h3><i class="fas fa-bullhorn" style="color:var(--accent);margin-right:6px"></i>Add Ticker Message</h3>
-            <button class="m-close" onclick="closeModal('addTickerModal')"><i class="fas fa-xmark"></i></button>
-        </div>
+        <div class="m-hdr"><h3><i class="fas fa-bullhorn" style="color:var(--accent);margin-right:6px"></i>Add Ticker Message</h3><button class="m-close" onclick="closeModal('addTickerModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" action="?page=ticker">
             <input type="hidden" name="_action" value="add_ticker">
             <div class="m-body">
-
                 <div class="fg">
-                    <label>Emoji <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
+                    <label>Emoji</label>
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <input type="text" name="ticker_emoji" id="addTickerEmoji" class="fc" style="width:80px;font-size:1.2rem;text-align:center" placeholder="🔥" maxlength="4">
-                        <div>
-                            <?php foreach (['🔥','💻','🖥️','⚡','🛡️','🎧','📦','🎁','💡','🚀','🛒','✅','🆕','🎮','📢'] as $em): ?>
-                            <span class="quick-emoji" onclick="document.getElementById('addTickerEmoji').value='<?= $em ?>'"><?= $em ?></span>
-                            <?php endforeach; ?>
-                        </div>
+                        <input type="text" name="ticker_emoji" id="addTickerEmoji" class="fc" style="width:80px;font-size:1.2rem;text-align:center" maxlength="4">
+                        <div><?php foreach (['🔥','💻','🖥️','⚡','🛡️','🎧','📦','🎁','💡','🚀','🛒','✅','🆕','🎮','📢'] as $em): ?><span class="quick-emoji" onclick="document.getElementById('addTickerEmoji').value='<?= $em ?>'"><?= $em ?></span><?php endforeach; ?></div>
                     </div>
-                    <div class="f-hint">Click an emoji to use it, or type/paste your own</div>
                 </div>
-
-                <div class="fg">
-                    <label>Message <span>*</span></label>
-                    <textarea name="ticker_message" class="fc" rows="2"
-                              placeholder="e.g. Free delivery on orders over LKR 50,000" required></textarea>
-                    <div class="f-hint">Keep it concise — under 80 characters works best</div>
-                </div>
-
+                <div class="fg"><label>Message <span>*</span></label><textarea name="ticker_message" class="fc" rows="2" required></textarea></div>
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Link URL</label>
-                        <input type="text" name="ticker_link_url" class="fc" placeholder="products.php?category=laptops">
-                        <div class="f-hint">Leave blank for no link</div>
-                    </div>
-                    <div class="fg">
-                        <label>Link Text</label>
-                        <input type="text" name="ticker_link_text" class="fc" placeholder="Shop now">
-                        <div class="f-hint">Text shown as hyperlink</div>
-                    </div>
+                    <div class="fg"><label>Link URL</label><input type="text" name="ticker_link_url" class="fc"></div>
+                    <div class="fg"><label>Link Text</label><input type="text" name="ticker_link_text" class="fc"></div>
                 </div>
-
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Sort Order</label>
-                        <input type="number" name="ticker_order" class="fc" value="0" min="0">
-                        <div class="f-hint">Lower = shown first</div>
-                    </div>
-                    <div class="fg">
-                        <label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="ticker_active" checked><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
-                    </div>
+                    <div class="fg"><label>Sort Order</label><input type="number" name="ticker_order" class="fc" value="0" min="0"></div>
+                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="ticker_active" checked><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
                 </div>
-
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('addTickerModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Message</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addTickerModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Message</button></div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- EDIT TICKER MODAL                                             -->
-<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- ══ EDIT TICKER MODAL ════════════════════════════════════════════ -->
 <div class="m-overlay" id="editTickerModal">
     <div class="modal" style="max-width:540px">
-        <div class="m-hdr">
-            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Ticker Message</h3>
-            <button class="m-close" onclick="closeModal('editTickerModal')"><i class="fas fa-xmark"></i></button>
-        </div>
+        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Ticker Message</h3><button class="m-close" onclick="closeModal('editTickerModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" action="?page=ticker">
             <input type="hidden" name="_action" value="edit_ticker">
             <input type="hidden" name="ticker_id" id="editTickerId">
             <div class="m-body">
-
                 <div class="fg">
                     <label>Emoji</label>
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <input type="text" name="ticker_emoji" id="editTickerEmoji" class="fc" style="width:80px;font-size:1.2rem;text-align:center" maxlength="4">
-                        <div>
-                            <?php foreach (['🔥','💻','🖥️','⚡','🛡️','🎧','📦','🎁','💡','🚀','🛒','✅','🆕','🎮','📢'] as $em): ?>
-                            <span class="quick-emoji" onclick="document.getElementById('editTickerEmoji').value='<?= $em ?>'"><?= $em ?></span>
-                            <?php endforeach; ?>
-                        </div>
+                        <div><?php foreach (['🔥','💻','🖥️','⚡','🛡️','🎧','📦','🎁','💡','🚀','🛒','✅','🆕','🎮','📢'] as $em): ?><span class="quick-emoji" onclick="document.getElementById('editTickerEmoji').value='<?= $em ?>'"><?= $em ?></span><?php endforeach; ?></div>
                     </div>
                 </div>
+                <div class="fg"><label>Message <span>*</span></label><textarea name="ticker_message" id="editTickerMessage" class="fc" rows="2" required></textarea></div>
+                <div class="f-row">
+                    <div class="fg"><label>Link URL</label><input type="text" name="ticker_link_url" id="editTickerLinkUrl" class="fc"></div>
+                    <div class="fg"><label>Link Text</label><input type="text" name="ticker_link_text" id="editTickerLinkText" class="fc"></div>
+                </div>
+                <div class="f-row">
+                    <div class="fg"><label>Sort Order</label><input type="number" name="ticker_order" id="editTickerOrder" class="fc" min="0"></div>
+                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="ticker_active" id="editTickerActive"><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
+                </div>
+            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editTickerModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
+        </form>
+    </div>
+</div>
 
+<!-- ══ ADD HERO SLIDE MODAL ══════════════════════════════════════════ -->
+<div class="m-overlay" id="addHeroSlideModal">
+    <div class="modal" style="max-width:600px">
+        <div class="m-hdr"><h3><i class="fas fa-panorama" style="color:var(--accent);margin-right:6px"></i>Add Hero Slide</h3><button class="m-close" onclick="closeModal('addHeroSlideModal')"><i class="fas fa-xmark"></i></button></div>
+        <form method="POST" enctype="multipart/form-data" action="?page=media&tab=hero_slides">
+            <input type="hidden" name="_action" value="add_hero_slide">
+            <div class="m-body">
                 <div class="fg">
-                    <label>Message <span>*</span></label>
-                    <textarea name="ticker_message" id="editTickerMessage" class="fc" rows="2" required></textarea>
+                    <label>Slide Image</label>
+                    <div class="img-prev" id="addSlideImgPrev" style="height:120px"><div class="iph"><i class="fas fa-panorama"></i></div><img id="addSlideImgPrevImg" src=""></div>
+                    <div class="f-row">
+                        <div><input type="file" name="slide_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'addSlideImgPrevImg','addSlideImgPrev')"></div>
+                        <div><input type="text" name="slide_image_url" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'addSlideImgPrevImg','addSlideImgPrev')"></div>
+                    </div>
+                    <div class="f-hint">Recommended: 1440×600px or wider, JPG/WebP</div>
                 </div>
-
-                <div class="f-row">
-                    <div class="fg">
-                        <label>Link URL</label>
-                        <input type="text" name="ticker_link_url" id="editTickerLinkUrl" class="fc">
-                    </div>
-                    <div class="fg">
-                        <label>Link Text</label>
-                        <input type="text" name="ticker_link_text" id="editTickerLinkText" class="fc">
-                    </div>
+                <div class="fg">
+                    <label>Click Link URL</label>
+                    <input type="text" name="slide_link" class="fc" placeholder="https://… or products.php?category=laptops">
+                    <div class="f-hint">Where the image redirects when clicked</div>
                 </div>
-
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Sort Order</label>
-                        <input type="number" name="ticker_order" id="editTickerOrder" class="fc" min="0">
-                    </div>
-                    <div class="fg">
-                        <label style="visibility:hidden">Active</label>
+                    <div class="fg"><label>Sort Order</label><input type="number" name="slide_order" class="fc" value="0" min="0"></div>
+                    <div class="fg"><label style="visibility:hidden">Active</label>
                         <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="ticker_active" id="editTickerActive"><span class="tgl-sl"></span></label>
+                            <label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" checked><span class="tgl-sl"></span></label>
                             <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
                         </div>
                     </div>
                 </div>
-
             </div>
             <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('editTickerModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Message</button>
+                <button type="button" class="btn-o" onclick="closeModal('addHeroSlideModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Slide</button>
             </div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- ADD AD MODAL                                                  -->
-<!-- ══════════════════════════════════════════════════════════════ -->
-<div class="m-overlay" id="addAdModal">
-    <div class="modal" style="max-width:640px">
-        <div class="m-hdr">
-            <h3><i class="fas fa-rectangle-ad" style="color:var(--accent);margin-right:6px"></i>New Advertisement</h3>
-            <button class="m-close" onclick="closeModal('addAdModal')"><i class="fas fa-xmark"></i></button>
-        </div>
-        <form method="POST" enctype="multipart/form-data" action="?page=advertisements">
-            <input type="hidden" name="_action" value="add_ad">
+<!-- ══ EDIT HERO SLIDE MODAL ════════════════════════════════════════ -->
+<div class="m-overlay" id="editHeroSlideModal">
+    <div class="modal" style="max-width:600px">
+        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Hero Slide</h3><button class="m-close" onclick="closeModal('editHeroSlideModal')"><i class="fas fa-xmark"></i></button></div>
+        <form method="POST" enctype="multipart/form-data" action="?page=media&tab=hero_slides">
+            <input type="hidden" name="_action" value="edit_hero_slide">
+            <input type="hidden" name="slide_id" id="editSlideId">
+            <input type="hidden" name="existing_slide_image" id="editSlideExistingImage">
             <div class="m-body">
                 <div class="fg">
-                    <label>Banner Image</label>
-                    <div class="img-prev" id="addAdImgPrev" style="height:110px">
-                        <div class="iph"><i class="fas fa-image"></i></div>
-                        <img id="addAdImgPrevImg" src="">
-                    </div>
+                    <label>Slide Image</label>
+                    <div class="img-prev" id="editSlideImgPrev" style="height:120px"><div class="iph" id="editSlideImgPh"><i class="fas fa-panorama"></i></div><img id="editSlideImgPrevImg" src="" style="display:none"></div>
                     <div class="f-row">
-                        <div>
-                            <input type="file" name="ad_image_file" accept="image/*" class="fc" style="padding:5px"
-                                   onchange="adPrvFile(this,'addAdImgPrevImg','addAdImgPrev')">
-                            <div class="f-hint">Upload JPG/PNG/WebP (recommended: 1200×500px)</div>
-                        </div>
-                        <div>
-                            <input type="text" name="ad_image_url" class="fc" placeholder="…or paste image path"
-                                   oninput="adPrvUrl(this.value,'addAdImgPrevImg','addAdImgPrev')">
-                            <div class="f-hint">e.g. uploads/ads/banner.jpg</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="f-row">
-                    <div class="fg">
-                        <label>Title <span>*</span></label>
-                        <input type="text" name="ad_title" class="fc" placeholder="e.g. Summer Sale — Up to 40% Off" required>
-                    </div>
-                    <div class="fg">
-                        <label>Subtitle / Tagline</label>
-                        <input type="text" name="ad_subtitle" class="fc" placeholder="e.g. On laptops, monitors & more">
-                    </div>
-                </div>
-                <div class="f-row">
-                    <div class="fg">
-                        <label>Position <span>*</span></label>
-                        <select name="ad_position" class="fc" id="addAdPosition">
-                            <?php foreach ($ad_positions as $pk => $pv): ?>
-                            <option value="<?= $pk ?>"><?= $pv['label'] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="f-hint" id="addAdPositionDesc">Full-width hero slider at top of homepage</div>
-                    </div>
-                    <div class="fg">
-                        <label>Badge Text</label>
-                        <input type="text" name="ad_badge" class="fc" placeholder="e.g. 🔥 Limited Time, NEW, SALE">
-                        <div class="f-hint">Small badge shown above the title</div>
-                    </div>
-                </div>
-                <div class="f-row">
-                    <div class="fg">
-                        <label>Button Text</label>
-                        <input type="text" name="ad_btn_text" class="fc" value="Shop Now">
-                    </div>
-                    <div class="fg">
-                        <label>Button Color</label>
-                        <div style="display:flex;gap:7px;align-items:center">
-                            <input type="color" name="ad_btn_color" id="addAdBtnColorPicker" class="fc" value="#0cb100" style="width:44px;height:36px;padding:3px;cursor:pointer" oninput="syncColorPicker('addAdBtnColorPicker','addAdBtnColorText')">
-                            <input type="text" id="addAdBtnColorText" class="fc" value="#0cb100" oninput="syncColorText('addAdBtnColorText','addAdBtnColorPicker')" style="flex:1">
-                        </div>
-                    </div>
-                </div>
-                <div class="f-row">
-                    <div class="fg">
-                        <label>Link URL</label>
-                        <input type="text" name="ad_link" class="fc" placeholder="e.g. products.php?category=laptops">
-                        <div class="f-hint">Leave blank for non-clickable banners</div>
-                    </div>
-                    <div class="fg">
-                        <label>Sort Order</label>
-                        <input type="number" name="ad_order" class="fc" value="0" min="0">
-                        <div class="f-hint">Lower = shown first in sliders</div>
+                        <div><input type="file" name="slide_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'editSlideImgPrevImg','editSlideImgPrev')"></div>
+                        <div><input type="text" name="slide_image_url" id="editSlideImageUrl" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'editSlideImgPrevImg','editSlideImgPrev')"></div>
                     </div>
                 </div>
                 <div class="fg">
-                    <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                        <label class="toggle" style="margin:0"><input type="checkbox" name="ad_active" checked><span class="tgl-sl"></span></label>
-                        <div>
+                    <label>Click Link URL</label>
+                    <input type="text" name="slide_link" id="editSlideLink" class="fc" placeholder="https://… or products.php?category=laptops">
+                    <div class="f-hint">Where the image redirects when clicked</div>
+                </div>
+                <div class="f-row">
+                    <div class="fg"><label>Sort Order</label><input type="number" name="slide_order" id="editSlideOrder" class="fc" min="0"></div>
+                    <div class="fg"><label style="visibility:hidden">Active</label>
+                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
+                            <label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" id="editSlideActive"><span class="tgl-sl"></span></label>
                             <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                            <span style="display:block;font-size:.72rem;color:var(--ink-muted)">Toggle off to save as draft without publishing</span>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('addAdModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Create Ad</button>
+                <button type="button" class="btn-o" onclick="closeModal('editHeroSlideModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Slide</button>
             </div>
         </form>
     </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- EDIT AD MODAL                                                 -->
-<!-- ══════════════════════════════════════════════════════════════ -->
-<div class="m-overlay" id="editAdModal">
-    <div class="modal" style="max-width:640px">
-        <div class="m-hdr">
-            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Advertisement</h3>
-            <button class="m-close" onclick="closeModal('editAdModal')"><i class="fas fa-xmark"></i></button>
-        </div>
-        <form method="POST" enctype="multipart/form-data" action="?page=advertisements">
-            <input type="hidden" name="_action" value="edit_ad">
-            <input type="hidden" name="ad_id" id="editAdId">
-            <input type="hidden" name="existing_ad_image" id="editAdExistingImage">
+<!-- ══ ADD POPUP IMAGE MODAL ════════════════════════════════════════ -->
+<div class="m-overlay" id="addPopupImageModal">
+    <div class="modal" style="max-width:540px">
+        <div class="m-hdr"><h3><i class="fas fa-window-maximize" style="color:var(--accent);margin-right:6px"></i>Add Popup Image</h3><button class="m-close" onclick="closeModal('addPopupImageModal')"><i class="fas fa-xmark"></i></button></div>
+        <form method="POST" enctype="multipart/form-data" action="?page=media&tab=popup_images">
+            <input type="hidden" name="_action" value="add_popup_image">
             <div class="m-body">
                 <div class="fg">
-                    <label>Banner Image</label>
-                    <div class="img-prev" id="editAdImgPrev" style="height:110px">
-                        <div class="iph" id="editAdImgPh"><i class="fas fa-image"></i></div>
-                        <img id="editAdImgPrevImg" src="" style="display:none">
-                    </div>
+                    <label>Image <span>*</span></label>
+                    <div class="img-prev" id="addPopupImgPrev" style="height:140px"><div class="iph"><i class="fas fa-image"></i></div><img id="addPopupImgPrevImg" src=""></div>
                     <div class="f-row">
-                        <div>
-                            <input type="file" name="ad_image_file" accept="image/*" class="fc" style="padding:5px"
-                                   onchange="adPrvFile(this,'editAdImgPrevImg','editAdImgPrev')">
-                            <div class="f-hint">Upload to replace current image</div>
-                        </div>
-                        <div>
-                            <input type="text" name="ad_image_url" id="editAdImageUrl" class="fc" placeholder="…or paste image path"
-                                   oninput="adPrvUrl(this.value,'editAdImgPrevImg','editAdImgPrev')">
-                            <div class="f-hint">Leave blank to keep existing</div>
-                        </div>
+                        <div><input type="file" name="popup_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'addPopupImgPrevImg','addPopupImgPrev')"></div>
+                        <div><input type="text" name="popup_image_url" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'addPopupImgPrevImg','addPopupImgPrev')"></div>
                     </div>
+                    <div class="f-hint">Recommended: 800×600px, JPG/PNG/WebP</div>
                 </div>
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Title <span>*</span></label>
-                        <input type="text" name="ad_title" id="editAdTitle" class="fc" required>
-                    </div>
-                    <div class="fg">
-                        <label>Subtitle / Tagline</label>
-                        <input type="text" name="ad_subtitle" id="editAdSubtitle" class="fc">
-                    </div>
+                    <div class="fg"><label>Alt Text</label><input type="text" name="popup_alt" class="fc" placeholder="Description of image"></div>
+                    <div class="fg"><label>Link URL</label><input type="text" name="popup_link" class="fc" placeholder="https://…"></div>
                 </div>
                 <div class="f-row">
-                    <div class="fg">
-                        <label>Position</label>
-                        <select name="ad_position" id="editAdPosition" class="fc">
-                            <?php foreach ($ad_positions as $pk => $pv): ?>
-                            <option value="<?= $pk ?>"><?= $pv['label'] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="fg">
-                        <label>Badge Text</label>
-                        <input type="text" name="ad_badge" id="editAdBadge" class="fc" placeholder="e.g. 🔥 Limited Time">
-                    </div>
-                </div>
-                <div class="f-row">
-                    <div class="fg">
-                        <label>Button Text</label>
-                        <input type="text" name="ad_btn_text" id="editAdBtnText" class="fc">
-                    </div>
-                    <div class="fg">
-                        <label>Button Color</label>
-                        <div style="display:flex;gap:7px;align-items:center">
-                            <input type="color" name="ad_btn_color" id="editAdBtnColorPicker" class="fc" style="width:44px;height:36px;padding:3px;cursor:pointer" oninput="syncColorPicker('editAdBtnColorPicker','editAdBtnColorText')">
-                            <input type="text" id="editAdBtnColorText" class="fc" placeholder="#0cb100" oninput="syncColorText('editAdBtnColorText','editAdBtnColorPicker')" style="flex:1">
-                        </div>
-                    </div>
-                </div>
-                <div class="f-row">
-                    <div class="fg">
-                        <label>Link URL</label>
-                        <input type="text" name="ad_link" id="editAdLink" class="fc">
-                    </div>
-                    <div class="fg">
-                        <label>Sort Order</label>
-                        <input type="number" name="ad_order" id="editAdOrder" class="fc" min="0">
-                    </div>
-                </div>
-                <div class="fg">
-                    <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                        <label class="toggle" style="margin:0"><input type="checkbox" name="ad_active" id="editAdActive"><span class="tgl-sl"></span></label>
-                        <div>
+                    <div class="fg"><label>Sort Order</label><input type="number" name="popup_order" class="fc" value="0" min="0"></div>
+                    <div class="fg"><label style="visibility:hidden">Active</label>
+                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
+                            <label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" checked><span class="tgl-sl"></span></label>
                             <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                            <span style="display:block;font-size:.72rem;color:var(--ink-muted)">Toggle off to hide without deleting</span>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('editAdModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Ad</button>
+                <button type="button" class="btn-o" onclick="closeModal('addPopupImageModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Image</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ══ EDIT POPUP IMAGE MODAL ═══════════════════════════════════════ -->
+<div class="m-overlay" id="editPopupImageModal">
+    <div class="modal" style="max-width:540px">
+        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Popup Image</h3><button class="m-close" onclick="closeModal('editPopupImageModal')"><i class="fas fa-xmark"></i></button></div>
+        <form method="POST" enctype="multipart/form-data" action="?page=media&tab=popup_images">
+            <input type="hidden" name="_action" value="edit_popup_image">
+            <input type="hidden" name="popup_id" id="editPopupId">
+            <input type="hidden" name="existing_popup_image" id="editPopupExistingImage">
+            <div class="m-body">
+                <div class="fg">
+                    <label>Image</label>
+                    <div class="img-prev" id="editPopupImgPrev" style="height:140px"><div class="iph" id="editPopupImgPh"><i class="fas fa-image"></i></div><img id="editPopupImgPrevImg" src="" style="display:none"></div>
+                    <div class="f-row">
+                        <div><input type="file" name="popup_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'editPopupImgPrevImg','editPopupImgPrev')"></div>
+                        <div><input type="text" name="popup_image_url" id="editPopupImageUrl" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'editPopupImgPrevImg','editPopupImgPrev')"></div>
+                    </div>
+                </div>
+                <div class="f-row">
+                    <div class="fg"><label>Alt Text</label><input type="text" name="popup_alt" id="editPopupAlt" class="fc"></div>
+                    <div class="fg"><label>Link URL</label><input type="text" name="popup_link" id="editPopupLink" class="fc"></div>
+                </div>
+                <div class="f-row">
+                    <div class="fg"><label>Sort Order</label><input type="number" name="popup_order" id="editPopupOrder" class="fc" min="0"></div>
+                    <div class="fg"><label style="visibility:hidden">Active</label>
+                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
+                            <label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" id="editPopupActive"><span class="tgl-sl"></span></label>
+                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('editPopupImageModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Image</button>
             </div>
         </form>
     </div>
 </div>
 
 
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!-- AD PREVIEW MODAL                                              -->
-<!-- ══════════════════════════════════════════════════════════════ -->
-<div class="m-overlay" id="adPreviewModal">
-    <div class="modal" style="max-width:560px">
-        <div class="m-hdr">
-            <h3><i class="fas fa-eye" style="color:var(--accent);margin-right:6px"></i>Ad Preview</h3>
-            <button class="m-close" onclick="closeModal('adPreviewModal')"><i class="fas fa-xmark"></i></button>
-        </div>
-        <div class="m-body">
-            <p style="font-size:.78rem;color:var(--ink-muted);margin-bottom:.9rem">Approximate preview of how this ad will appear on the homepage.</p>
-            <div class="preview-device">
-                <div class="preview-chrome"></div>
-                <div id="adPreviewContent" style="padding:.3rem"></div>
-            </div>
-            <div style="margin-top:1rem;background:var(--surface);border-radius:var(--r-md);padding:.8rem 1rem" id="adPreviewMeta"></div>
-        </div>
-        <div class="m-foot">
-            <button type="button" class="btn-o" onclick="closeModal('adPreviewModal')">Close</button>
-        </div>
-    </div>
-</div>
-
-
+<!-- ══════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════════════════ -->
 <script>
-/* ── Modal helpers ───────────────────────────────────────────── */
-function openModal(id)  { document.getElementById(id).classList.add('open'); document.body.style.overflow='hidden'; }
+// ── Modal helpers ─────────────────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('open');    document.body.style.overflow='hidden'; }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow=''; }
-document.querySelectorAll('.m-overlay').forEach(el => {
-    el.addEventListener('click', e => { if (e.target===el) closeModal(el.id); });
+
+document.querySelectorAll('.m-overlay').forEach(ov => {
+    ov.addEventListener('click', e => { if (e.target === ov) closeModal(ov.id); });
+});
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.m-overlay.open').forEach(ov => closeModal(ov.id));
+    }
 });
 
-/* ── Add Product image preview ───────────────────────────────── */
-function prvFile(inp) {
-    if (!inp.files.length) return;
-    const r=new FileReader();
-    r.onload=e=>showPrv(e.target.result);
-    r.readAsDataURL(inp.files[0]);
-}
-function prvUrl(url) { if (url.trim()) showPrv(url); }
-function showPrv(src) {
-    const img=document.getElementById('imgPrevImg');
-    const ph=document.querySelector('#imgPrev .iph');
-    img.src=src; img.style.display='block';
-    if (ph) ph.style.display='none';
-}
-
-/* ── Edit Product image preview ──────────────────────────────── */
-function prvFileEdit(inp) {
-    if (!inp.files.length) return;
+// ── Image preview helpers ─────────────────────────────────────────────────────
+function prvFile(input) {
+    if (!input.files[0]) return;
     const r = new FileReader();
-    r.onload = e => showPrvEdit(e.target.result);
-    r.readAsDataURL(inp.files[0]);
+    r.onload = e => showPrv('imgPrevImg','imgPrev', e.target.result);
+    r.readAsDataURL(input.files[0]);
 }
-function prvUrlEdit(url) { if (url.trim()) showPrvEdit(url); }
-function showPrvEdit(src) {
-    const img = document.getElementById('editImgPrevImg');
-    const ph  = document.getElementById('editImgPh');
-    img.src = src; img.style.display = 'block';
+function prvUrl(url) {
+    if (url) showPrv('imgPrevImg','imgPrev', '../' + url);
+    else     hidePrv('imgPrevImg','imgPrev');
+}
+function prvFileEdit(input) {
+    if (!input.files[0]) return;
+    const r = new FileReader();
+    r.onload = e => showPrv('editImgPrevImg','editImgPrev', e.target.result);
+    r.readAsDataURL(input.files[0]);
+}
+function prvUrlEdit(url) {
+    if (url) showPrv('editImgPrevImg','editImgPrev', '../' + url);
+    else {
+        const existing = document.getElementById('editProdExistingImage').value;
+        if (existing) showPrv('editImgPrevImg','editImgPrev', '../' + existing);
+        else hidePrv('editImgPrevImg','editImgPrev');
+    }
+}
+function adPrvFile(input, imgId, wrapId) {
+    if (!input.files[0]) return;
+    const r = new FileReader();
+    r.onload = e => showPrv(imgId, wrapId, e.target.result);
+    r.readAsDataURL(input.files[0]);
+}
+function adPrvUrl(url, imgId, wrapId) {
+    if (url) showPrv(imgId, wrapId, '../' + url);
+    else     hidePrv(imgId, wrapId);
+}
+function showPrv(imgId, wrapId, src) {
+    const img  = document.getElementById(imgId);
+    const wrap = document.getElementById(wrapId);
+    if (!img || !wrap) return;
+    img.src = src;
+    img.style.display = 'block';
+    const ph = wrap.querySelector('.iph');
     if (ph) ph.style.display = 'none';
 }
+function hidePrv(imgId, wrapId) {
+    const img  = document.getElementById(imgId);
+    const wrap = document.getElementById(wrapId);
+    if (!img || !wrap) return;
+    img.style.display = 'none';
+    const ph = wrap.querySelector('.iph');
+    if (ph) ph.style.display = '';
+}
 
-/* ── Open Edit Product modal ─────────────────────────────────── */
-function openEditProduct(data) {
-    document.getElementById('editProdId').value            = data.id;
-    document.getElementById('editProdName').value          = data.name;
-    document.getElementById('editProdBrand').value         = data.brand || '';
-    document.getElementById('editProdPrice').value         = data.price;
-    document.getElementById('editProdOrigPrice').value     = data.original_price || '';
-    document.getElementById('editProdStock').value         = data.stock_count;
-    document.getElementById('editProdSpecs').value         = data.specs || '';
-    document.getElementById('editProdImageUrl').value      = '';
-    document.getElementById('editProdExistingImage').value = data.image || '';
-    const sel = document.getElementById('editProdCategory');
-    Array.from(sel.options).forEach(o => { o.selected = (o.value === data.category); });
-    const img = document.getElementById('editImgPrevImg');
-    const ph  = document.getElementById('editImgPh');
-    if (data.image) {
-        img.src = '../' + data.image; img.style.display = 'block';
-        if (ph) ph.style.display = 'none';
-        img.onerror = () => { img.style.display='none'; if(ph) ph.style.display='flex'; };
-    } else {
-        img.style.display = 'none'; if (ph) ph.style.display = 'flex';
-    }
-    const fileInput = document.querySelector('#editProductModal input[type=file]');
-    if (fileInput) fileInput.value = '';
+// ── Edit Product Modal ────────────────────────────────────────────────────────
+function openEditProduct(d) {
+    document.getElementById('editProdId').value          = d.id;
+    document.getElementById('editProdName').value        = d.name;
+    document.getElementById('editProdBrand').value       = d.brand || '';
+    document.getElementById('editProdCategory').value    = d.category;
+    document.getElementById('editProdPrice').value       = d.price;
+    document.getElementById('editProdOrigPrice').value   = d.original_price || '';
+    document.getElementById('editProdStock').value       = d.stock_count;
+    document.getElementById('editProdSpecs').value       = d.specs || '';
+    document.getElementById('editProdExistingImage').value = d.image || '';
+    document.getElementById('editProdImageUrl').value    = d.image || '';
+    if (d.image) showPrv('editImgPrevImg', 'editImgPrev', '../' + d.image);
+    else hidePrv('editImgPrevImg', 'editImgPrev');
     openModal('editProductModal');
 }
 
-/* ── Slug auto-generation ────────────────────────────────────── */
-function autoSlug(nameInput, slugFieldId) {
-    const slugEl = document.getElementById(slugFieldId);
-    if (!slugEl) return;
-    slugEl.value = nameInput.value.toLowerCase().trim()
-        .replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+// ── Category helpers ──────────────────────────────────────────────────────────
+function slugify(text) {
+    return text.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
-
-/* ── Icon picker ─────────────────────────────────────────────── */
-function updateIconPreview(prefix) {
-    const val = document.getElementById(prefix+'CatIcon').value.trim() || 'fa-tag';
-    document.getElementById(prefix+'IconPreviewI').className = 'fas '+val;
-    document.querySelectorAll('#'+prefix+'IconGrid .icon-opt').forEach(el => {
-        el.classList.toggle('selected', el.title===val);
-    });
+function autoSlug(nameInput, slugId) {
+    document.getElementById(slugId).value = slugify(nameInput.value);
 }
-function selectIcon(prefix, ico) {
-    document.getElementById(prefix+'CatIcon').value = ico;
+function selectIcon(prefix, icon) {
+    document.getElementById(prefix + 'CatIcon').value = icon;
+    document.querySelectorAll('#' + prefix + 'IconGrid .icon-opt').forEach(el => el.classList.remove('selected'));
+    const chosen = document.querySelector('#' + prefix + 'IconGrid [title="' + icon + '"]');
+    if (chosen) chosen.classList.add('selected');
     updateIconPreview(prefix);
 }
-
-/* ── Open Edit Category modal ────────────────────────────────── */
-function openEditCat(data) {
-    document.getElementById('editCatId').value   = data.id;
-    document.getElementById('editCatName').value = data.name;
-    document.getElementById('editCatSlug').value = data.slug;
-    document.getElementById('editOldSlug').value = data.slug;
-    document.getElementById('editCatDesc').value = data.desc;
-    document.getElementById('editCatIcon').value = data.icon;
+function updateIconPreview(prefix) {
+    const val = document.getElementById(prefix + 'CatIcon').value || 'fa-tag';
+    const el  = document.getElementById(prefix + 'IconPreviewI');
+    if (el) { el.className = 'fas ' + val; }
+}
+function openEditCat(d) {
+    document.getElementById('editCatId').value   = d.id;
+    document.getElementById('editCatName').value = d.name;
+    document.getElementById('editCatSlug').value = d.slug;
+    document.getElementById('editOldSlug').value = d.slug;
+    document.getElementById('editCatDesc').value = d.desc || '';
+    document.getElementById('editCatIcon').value = d.icon || 'fa-tag';
     updateIconPreview('edit');
+    document.querySelectorAll('#editIconGrid .icon-opt').forEach(el => {
+        el.classList.toggle('selected', el.title === (d.icon || 'fa-tag'));
+    });
     openModal('editCatModal');
 }
-
-/* ── Open Delete Category modal ──────────────────────────────── */
-function openDeleteCat(data) {
-    document.getElementById('delCatId').value   = data.id;
-    document.getElementById('delCatSlug').value = data.slug;
-    const wrap = document.getElementById('delReassignWrap');
+function openDeleteCat(d) {
+    document.getElementById('delCatId').value   = d.id;
+    document.getElementById('delCatSlug').value = d.slug;
     const msg  = document.getElementById('delCatMsg');
-    if (data.cnt > 0) {
-        msg.innerHTML = `<strong style="color:#dc2626">Warning:</strong> This category has <strong>${data.cnt} product(s)</strong>. Choose how to handle them below.`;
-        wrap.style.display = 'block';
+    const wrap = document.getElementById('delReassignWrap');
+    if (d.cnt > 0) {
+        msg.innerHTML  = '<i class="fas fa-triangle-exclamation" style="color:#f59e0b;margin-right:5px"></i>'
+            + 'Category <strong>' + d.name + '</strong> has <strong>' + d.cnt + '</strong> product(s). '
+            + 'Choose where to move them:';
+        wrap.style.display = '';
         document.querySelectorAll('#delReassignWrap select option').forEach(opt => {
-            opt.hidden = (opt.value === data.slug);
+            opt.style.display = (opt.value === d.slug) ? 'none' : '';
         });
     } else {
-        msg.textContent = `Delete category "${data.name}"? It has no products, so this is safe.`;
+        msg.innerHTML  = 'Delete category <strong>' + d.name + '</strong>? This action cannot be undone.';
         wrap.style.display = 'none';
     }
     openModal('deleteCatModal');
 }
 
-/* ── Ad image preview helpers ────────────────────────────────── */
-function adPrvFile(inp, imgId, wrpId) {
-    if (!inp.files.length) return;
-    const r = new FileReader();
-    r.onload = e => adShowPrv(e.target.result, imgId, wrpId);
-    r.readAsDataURL(inp.files[0]);
-}
-function adPrvUrl(url, imgId, wrpId) { if (url.trim()) adShowPrv(url, imgId, wrpId); }
-function adShowPrv(src, imgId, wrpId) {
-    const img = document.getElementById(imgId);
-    const ph  = document.querySelector('#' + wrpId + ' .iph') || document.getElementById(imgId.replace('PrevImg','ImgPh'));
-    img.src = src; img.style.display = 'block';
-    if (ph) ph.style.display = 'none';
-}
-
-/* ── Color sync ──────────────────────────────────────────────── */
-function syncColorPicker(pickerId, textId) {
-    document.getElementById(textId).value = document.getElementById(pickerId).value;
-}
-function syncColorText(textId, pickerId) {
-    const val = document.getElementById(textId).value;
-    if (/^#[0-9a-f]{6}$/i.test(val)) document.getElementById(pickerId).value = val;
-}
-
-/* ── Add-ad modal: pre-fill position ─────────────────────────── */
-function openAddAdForPosition(pos) {
-    const sel = document.getElementById('addAdPosition');
-    if (sel) Array.from(sel.options).forEach(o => o.selected = (o.value === pos));
-    const descs = <?= json_encode(array_combine(array_keys($ad_positions), array_column(array_values($ad_positions),'desc'))) ?>;
-    const descEl = document.getElementById('addAdPositionDesc');
-    if (descEl && descs[pos]) descEl.textContent = descs[pos];
-    openModal('addAdModal');
-}
-document.getElementById('addAdPosition')?.addEventListener('change', function() {
-    const descs = <?= json_encode(array_combine(array_keys($ad_positions), array_column(array_values($ad_positions),'desc'))) ?>;
-    const descEl = document.getElementById('addAdPositionDesc');
-    if (descEl) descEl.textContent = descs[this.value] || '';
-});
-
-/* ── Open edit-ad modal ──────────────────────────────────────── */
-function openEditAd(data) {
-    document.getElementById('editAdId').value              = data.id;
-    document.getElementById('editAdTitle').value           = data.title;
-    document.getElementById('editAdSubtitle').value        = data.subtitle || '';
-    document.getElementById('editAdBadge').value           = data.badge_text || '';
-    document.getElementById('editAdBtnText').value         = data.btn_text || '';
-    document.getElementById('editAdBtnColorPicker').value  = data.btn_color || '#0cb100';
-    document.getElementById('editAdBtnColorText').value    = data.btn_color || '#0cb100';
-    document.getElementById('editAdLink').value            = data.link_url || '';
-    document.getElementById('editAdOrder').value           = data.sort_order || 0;
-    document.getElementById('editAdActive').checked        = !!parseInt(data.is_active);
-    document.getElementById('editAdExistingImage').value   = data.image || '';
-    document.getElementById('editAdImageUrl').value        = '';
-    const sel = document.getElementById('editAdPosition');
-    Array.from(sel.options).forEach(o => o.selected = (o.value === data.position));
-    const img = document.getElementById('editAdImgPrevImg');
-    const ph  = document.getElementById('editAdImgPh');
-    if (data.image) {
-        img.src = '../' + data.image; img.style.display = 'block';
-        if (ph) ph.style.display = 'none';
-        img.onerror = () => { img.style.display = 'none'; if (ph) ph.style.display = 'flex'; };
-    } else {
-        img.style.display = 'none'; if (ph) ph.style.display = 'flex';
-    }
-    const fileInput = document.querySelector('#editAdModal input[type=file]');
-    if (fileInput) fileInput.value = '';
-    openModal('editAdModal');
-}
-
-/* ── Ad preview renderer ─────────────────────────────────────── */
-function openAdPreview(data) {
-    const container = document.getElementById('adPreviewContent');
-    const meta      = document.getElementById('adPreviewMeta');
-    const imgSrc    = data.image ? '../' + data.image : '';
-    const btnC      = data.btn_color || '#0cb100';
-    const pos       = data.position || 'hero';
-    let html = '';
-    if (pos === 'hero') {
-        html = `<div style="background:linear-gradient(135deg,#111,#1a1a2e);min-height:155px;display:flex;align-items:center;justify-content:space-between;padding:1.2rem 1.4rem;gap:1rem;position:relative;overflow:hidden">
-            ${imgSrc ? `<img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.35" src="${imgSrc}" onerror="this.remove()">` : ''}
-            <div style="position:relative;z-index:1">
-                ${data.badge_text ? `<div style="font-size:.58rem;font-weight:800;padding:2px 8px;border-radius:100px;margin-bottom:6px;display:inline-block;background:${btnC};color:#fff">${data.badge_text}</div>` : ''}
-                <div style="font-size:.9rem;font-weight:800;color:#fff;line-height:1.2;margin-bottom:4px">${data.title||'Ad Title'}</div>
-                <div style="font-size:.67rem;color:rgba(255,255,255,.55);margin-bottom:10px">${data.subtitle||''}</div>
-                ${data.btn_text ? `<span style="font-size:.63rem;font-weight:700;padding:5px 12px;border-radius:6px;background:${btnC};color:#fff">${data.btn_text}</span>` : ''}
-            </div>
-            ${imgSrc ? `<img src="${imgSrc}" style="width:90px;height:90px;object-fit:contain;border-radius:10px;position:relative;z-index:1;flex-shrink:0" onerror="this.remove()">` : ''}
-        </div>`;
-    } else if (pos === 'banner') {
-        html = `<div style="background:#f8f8ff;padding:1rem 1.4rem;display:flex;align-items:center;gap:1rem">
-            ${imgSrc ? `<img src="${imgSrc}" style="width:70px;height:55px;object-fit:cover;border-radius:8px" onerror="this.remove()">` : '<div style="width:70px;height:55px;background:#e0e0e8;border-radius:8px;flex-shrink:0"></div>'}
-            <div>
-                ${data.badge_text ? `<div style="font-size:.58rem;font-weight:800;background:${btnC};color:#fff;padding:2px 8px;border-radius:100px;margin-bottom:4px;display:inline-block">${data.badge_text}</div>` : ''}
-                <div style="font-size:.82rem;font-weight:800;color:#111">${data.title||'Banner Title'}</div>
-                <div style="font-size:.67rem;color:#888;margin:2px 0 8px">${data.subtitle||''}</div>
-                ${data.btn_text ? `<span style="font-size:.63rem;font-weight:700;padding:4px 10px;border-radius:6px;background:${btnC};color:#fff">${data.btn_text}</span>` : ''}
-            </div>
-        </div>`;
-    } else if (pos === 'sidebar') {
-        html = `<div style="background:#f8f8ff;padding:1rem;max-width:190px;margin:0 auto">
-            ${imgSrc ? `<img src="${imgSrc}" style="width:100%;height:90px;object-fit:cover;border-radius:8px;margin-bottom:8px" onerror="this.remove()">` : '<div style="width:100%;height:90px;background:#e0e0e8;border-radius:8px;margin-bottom:8px"></div>'}
-            ${data.badge_text ? `<span style="font-size:.55rem;background:${btnC};color:#fff;padding:2px 6px;border-radius:100px">${data.badge_text}</span>` : ''}
-            <div style="font-size:.75rem;font-weight:800;color:#111;margin:4px 0 2px">${data.title||''}</div>
-            <div style="font-size:.63rem;color:#888;margin-bottom:7px">${data.subtitle||''}</div>
-            ${data.btn_text ? `<div style="font-size:.6rem;font-weight:700;padding:4px 10px;border-radius:6px;background:${btnC};color:#fff;text-align:center">${data.btn_text}</div>` : ''}
-        </div>`;
-    } else if (pos === 'popup') {
-        html = `<div style="display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);padding:1.2rem;border-radius:8px">
-            <div style="background:#fff;border-radius:10px;overflow:hidden;width:210px">
-                ${imgSrc ? `<img src="${imgSrc}" style="width:100%;height:85px;object-fit:cover" onerror="this.remove()">` : '<div style="width:100%;height:85px;background:#e8e8f0"></div>'}
-                <div style="padding:.7rem .9rem">
-                    ${data.badge_text ? `<span style="font-size:.55rem;background:${btnC};color:#fff;padding:2px 6px;border-radius:100px">${data.badge_text}</span>` : ''}
-                    <div style="font-size:.78rem;font-weight:800;color:#111;margin:4px 0 2px">${data.title||''}</div>
-                    <div style="font-size:.62rem;color:#888;margin-bottom:8px">${data.subtitle||''}</div>
-                    ${data.btn_text ? `<div style="font-size:.6rem;font-weight:700;padding:4px 10px;border-radius:6px;background:${btnC};color:#fff;text-align:center;margin-bottom:4px">${data.btn_text}</div>` : ''}
-                    <div style="font-size:.55rem;color:#aaa;text-align:center;cursor:pointer">✕ Close popup</div>
-                </div>
-            </div>
-        </div>`;
-    } else {
-        html = `<div style="background:#f8f8ff;padding:.8rem 1rem;text-align:center;display:flex;align-items:center;justify-content:center;gap:.7rem;flex-wrap:wrap">
-            ${data.badge_text ? `<span style="font-size:.58rem;background:${btnC};color:#fff;padding:2px 8px;border-radius:100px">${data.badge_text}</span>` : ''}
-            <span style="font-size:.78rem;font-weight:700;color:#111">${data.title}</span>
-            ${data.subtitle ? `<span style="font-size:.67rem;color:#888">${data.subtitle}</span>` : ''}
-            ${data.btn_text ? `<span style="font-size:.63rem;font-weight:700;padding:3px 10px;border-radius:6px;background:${btnC};color:#fff">${data.btn_text}</span>` : ''}
-        </div>`;
-    }
-    container.innerHTML = html;
-    meta.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.74rem">
-        <div><span style="color:var(--ink-muted);font-weight:600">Position:</span> <strong>${data.position}</strong></div>
-        <div><span style="color:var(--ink-muted);font-weight:600">Status:</span> <strong style="color:${data.is_active?'#15803d':'#dc2626'}">${data.is_active?'● Active':'● Inactive'}</strong></div>
-        <div><span style="color:var(--ink-muted);font-weight:600">Link:</span> ${data.link_url?`<a href="${data.link_url}" target="_blank" style="color:var(--accent)">${data.link_url.substring(0,35)}${data.link_url.length>35?'…':''}</a>`:'<em>none</em>'}</div>
-        <div><span style="color:var(--ink-muted);font-weight:600">Sort order:</span> <strong>${data.sort_order}</strong></div>
-    </div>`;
-    openModal('adPreviewModal');
-}
-
-/* ── Category filter (Products page) ────────────────────────── */
-document.querySelectorAll('#catTabs .ftab').forEach(tab=>{
-    tab.addEventListener('click',e=>{
-        e.preventDefault();
-        document.querySelectorAll('#catTabs .ftab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
-        const cat=tab.dataset.cat;
-        document.querySelectorAll('#prodTable tbody tr').forEach(row=>{
-            row.style.display=(cat==='all'||row.dataset.cat===cat)?'':'none';
-        });
-    });
-});
-
-/* ── Order status filter ─────────────────────────────────────── */
-document.querySelectorAll('#orderTabs .ftab').forEach(tab=>{
-    tab.addEventListener('click',e=>{
-        e.preventDefault();
-        document.querySelectorAll('#orderTabs .ftab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
-        const f=tab.dataset.filter;
-        document.querySelectorAll('#orderTable tbody tr').forEach(row=>{
-            row.style.display=(f==='all'||row.dataset.status===f)?'':'none';
-        });
-    });
-});
-
-/* ── Live table search ───────────────────────────────────────── */
-function liveSearch(inputId, tableId) {
-    const el=document.getElementById(inputId);
-    if (!el) return;
-    el.addEventListener('input',()=>{
-        const q=el.value.toLowerCase();
-        document.querySelectorAll(`#${tableId} tbody tr`).forEach(row=>{
-            row.style.display=row.textContent.toLowerCase().includes(q)?'':'none';
-        });
-    });
-}
-liveSearch('prodSearch','prodTable');
-liveSearch('orderSearch','orderTable');
-liveSearch('custSearch','custTable');
-liveSearch('catSearch','catTable');
-liveSearch('adSearch','adTable');
-
-/* ── Ticker live preview color update ────────────────────────── */
-function updateTickerPreviewColor(color) {
-    const bar = document.getElementById('livePreviewBar');
-    if (bar) bar.style.background = color;
-    const dash = document.querySelector('.ticker-dash-bar');
-    if (dash) dash.style.background = color;
-}
-
-/* ── Open edit ticker modal ──────────────────────────────────── */
-function openEditTicker(data) {
-    document.getElementById('editTickerId').value       = data.id;
-    document.getElementById('editTickerMessage').value  = data.message;
-    document.getElementById('editTickerEmoji').value    = data.emoji || '';
-    document.getElementById('editTickerLinkUrl').value  = data.link_url || '';
-    document.getElementById('editTickerLinkText').value = data.link_text || '';
-    document.getElementById('editTickerOrder').value    = data.sort_order || 0;
-    document.getElementById('editTickerActive').checked = !!parseInt(data.is_active);
+// ── Ticker helpers ────────────────────────────────────────────────────────────
+function openEditTicker(d) {
+    document.getElementById('editTickerId').value       = d.id;
+    document.getElementById('editTickerMessage').value  = d.message;
+    document.getElementById('editTickerLinkUrl').value  = d.link_url  || '';
+    document.getElementById('editTickerLinkText').value = d.link_text || '';
+    document.getElementById('editTickerEmoji').value    = d.emoji     || '';
+    document.getElementById('editTickerOrder').value    = d.sort_order || 0;
+    document.getElementById('editTickerActive').checked = !!d.is_active;
     openModal('editTickerModal');
 }
+function updateTickerPreviewColor(color) {
+    const bars = document.querySelectorAll('#livePreviewBar, #dashTickerBar');
+    bars.forEach(b => { if (b) b.style.background = color; });
+}
 
-liveSearch('tickerSearch','tickerTable');
+// ── Hero Slide helpers ────────────────────────────────────────────────────────
+function openEditHeroSlide(d) {
+    document.getElementById('editSlideId').value             = d.id;
+    document.getElementById('editSlideLink').value           = d.link_url      || '';
+    document.getElementById('editSlideOrder').value          = d.sort_order    || 0;
+    document.getElementById('editSlideActive').checked       = !!d.is_active;
+    document.getElementById('editSlideExistingImage').value  = d.image_url     || '';
+    document.getElementById('editSlideImageUrl').value       = d.image_url     || '';
+    if (d.image_url) showPrv('editSlideImgPrevImg', 'editSlideImgPrev', '../' + d.image_url);
+    else hidePrv('editSlideImgPrevImg', 'editSlideImgPrev');
+    openModal('editHeroSlideModal');
+}
 
-/* Global search */
-document.getElementById('gSearch')?.addEventListener('input',function(){
-    const q=this.value.toLowerCase();
-    ['prodTable','orderTable','custTable','catTable','adTable','tickerTable'].forEach(tid=>{
-        document.querySelectorAll(`#${tid} tbody tr`).forEach(row=>{
-            row.style.display=row.textContent.toLowerCase().includes(q)?'':'none';
+// ── Popup Image helpers ───────────────────────────────────────────────────────
+function openEditPopupImage(d) {
+    document.getElementById('editPopupId').value             = d.id;
+    document.getElementById('editPopupAlt').value            = d.alt_text   || '';
+    document.getElementById('editPopupLink').value           = d.link_url   || '';
+    document.getElementById('editPopupOrder').value          = d.sort_order || 0;
+    document.getElementById('editPopupActive').checked       = !!d.is_active;
+    document.getElementById('editPopupExistingImage').value  = d.image_src  || '';
+    document.getElementById('editPopupImageUrl').value       = d.image_src  || '';
+    if (d.image_src) showPrv('editPopupImgPrevImg', 'editPopupImgPrev', '../' + d.image_src);
+    else hidePrv('editPopupImgPrevImg', 'editPopupImgPrev');
+    openModal('editPopupImageModal');
+}
+
+// ── Global search filter ──────────────────────────────────────────────────────
+document.getElementById('gSearch')?.addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+});
+
+// Per-table search
+function bindSearch(inputId, tableId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        document.querySelectorAll('#' + tableId + ' tbody tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+    });
+}
+bindSearch('prodSearch',   'prodTable');
+bindSearch('orderSearch',  'orderTable');
+bindSearch('custSearch',   'custTable');
+bindSearch('catSearch',    'catTable');
+bindSearch('tickerSearch', 'tickerTable');
+
+// ── Category tab filter (products page) ──────────────────────────────────────
+document.querySelectorAll('#catTabs .ftab').forEach(tab => {
+    tab.addEventListener('click', function(e) {
+        e.preventDefault();
+        document.querySelectorAll('#catTabs .ftab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        const cat = this.dataset.cat;
+        document.querySelectorAll('#prodTable tbody tr').forEach(row => {
+            row.style.display = (cat === 'all' || row.dataset.cat === cat) ? '' : 'none';
         });
     });
 });
 
-/* ── CSV export ──────────────────────────────────────────────── */
-function exportTable(id) {
-    const tbl=document.getElementById(id);
-    if (!tbl) { alert('No table to export on this page.'); return; }
-    let csv='';
-    tbl.querySelectorAll('tr').forEach(row=>{
-        const cols=[...row.querySelectorAll('th,td')].map(c=>'"'+c.innerText.replace(/"/g,'""').replace(/\n/g,' ')+'"');
-        csv+=cols.join(',')+'\n';
+// ── Order status filter ───────────────────────────────────────────────────────
+document.querySelectorAll('#orderTabs .ftab').forEach(tab => {
+    tab.addEventListener('click', function(e) {
+        e.preventDefault();
+        document.querySelectorAll('#orderTabs .ftab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        const filter = this.dataset.filter;
+        document.querySelectorAll('#orderTable tbody tr').forEach(row => {
+            row.style.display = (filter === 'all' || row.dataset.status === filter) ? '' : 'none';
+        });
     });
-    const a=document.createElement('a');
-    a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
-    a.download='itshop-<?= $active ?>-<?= date('Y-m-d') ?>.csv';
+});
+
+// ── CSV Export ────────────────────────────────────────────────────────────────
+function exportTable(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    let csv = [];
+    table.querySelectorAll('tr').forEach(row => {
+        const cells = [...row.querySelectorAll('th,td')].map(cell => '"' + cell.innerText.replace(/"/g, '""').trim() + '"');
+        csv.push(cells.join(','));
+    });
+    const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = tableId + '_' + new Date().toISOString().slice(0,10) + '.csv';
     a.click();
 }
 
-/* ── Stock input: Enter to submit ────────────────────────────── */
-document.querySelectorAll('.se-num').forEach(inp=>{
-    inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();inp.closest('form').submit();} });
-});
+// ── Auto-dismiss flash messages ───────────────────────────────────────────────
+const flashEl = document.querySelector('.flash');
+if (flashEl) {
+    setTimeout(() => {
+        flashEl.style.transition = 'opacity .5s';
+        flashEl.style.opacity    = '0';
+        setTimeout(() => flashEl.remove(), 500);
+    }, 4500);
+}
 </script>
+
 </body>
 </html>

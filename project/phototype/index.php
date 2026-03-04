@@ -82,6 +82,20 @@ include 'popup.php';
         position: absolute;
         inset: 0;
         z-index: 0;
+        
+    }
+
+    a.hero-slide {
+    display: block;
+    cursor: pointer;
+    text-decoration: none;
+    }
+
+    a.hero-slide:hover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.04);
     }
 
     .hero-slide {
@@ -103,12 +117,7 @@ include 'popup.php';
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(
-            135deg,
-            rgba(5, 5, 10, 0.78) 0%,
-            rgba(5, 5, 10, 0.45) 60%,
-            rgba(5, 5, 10, 0.25) 100%
-        );
+        
     }
 
     .hero-grid {
@@ -116,8 +125,7 @@ include 'popup.php';
         inset: 0;
         z-index: 1;
         background-image:
-            linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+           
         background-size: 60px 60px;
         pointer-events: none;
     }
@@ -383,23 +391,25 @@ include 'popup.php';
 <section class="hero">
 
     <!-- Background slides -->
-    <div class="hero-slides">
-        <?php foreach ($hero_slides as $i => $slide):
-            $bg = '';
-            if (!empty($slide['image_url'])) {
-                // local upload path
-                $bg = 'style="background-image:url(\'' . htmlspecialchars($slide['image_url']) . '\')"';
-            }
-        ?>
-        <div class="hero-slide <?= $i === 0 ? 'active' : '' ?>" <?= $bg ?>
-             data-title="<?= htmlspecialchars($slide['title'] ?? '') ?>"
-             data-subtitle="<?= htmlspecialchars($slide['subtitle'] ?? '') ?>"
-             data-link="<?= htmlspecialchars($slide['link_url'] ?? 'products.php') ?>"
-             data-btn="<?= htmlspecialchars($slide['btn_text'] ?? 'Shop Now') ?>"
-             data-ghost="<?= htmlspecialchars($slide['btn_ghost_text'] ?? 'View All') ?>">
-        </div>
-        <?php endforeach; ?>
+<div class="hero-slides">
+    <?php foreach ($hero_slides as $i => $slide):
+        $bg = '';
+        if (!empty($slide['image_url'])) {
+            $bg = 'style="background-image:url(\'' . htmlspecialchars($slide['image_url']) . '\')"';
+        }
+        $link = !empty($slide['link_url']) ? htmlspecialchars($slide['link_url']) : '';
+    ?>
+    <?php if ($link): ?>
+    <a href="<?= $link ?>" class="hero-slide <?= $i === 0 ? 'active' : '' ?>" <?= $bg ?>
+       data-link="<?= $link ?>">
+    </a>
+    <?php else: ?>
+    <div class="hero-slide <?= $i === 0 ? 'active' : '' ?>" <?= $bg ?>
+         data-link="">
     </div>
+    <?php endif; ?>
+    <?php endforeach; ?>
+</div>
 
     <div class="hero-grid"></div>
     <div class="hero-glow"></div>
@@ -413,28 +423,6 @@ include 'popup.php';
         <i class="fas fa-chevron-right"></i>
     </button>
     <?php endif; ?>
-
-    <!-- Hero content (updates dynamically) -->
-    <div class="hero-inner" id="hero-content">
-        <!--<div class="hero-pill"><span></span> SRI LANKA BEST COMPUTER STORE</div>
-        <h1 class="hero-title" id="hero-title">
-            <?= htmlspecialchars($hero_slides[0]['title'] ?? 'Premium Tech') ?>
-        </h1>
-        <p class="hero-sub" id="hero-sub">
-            <?= htmlspecialchars($hero_slides[0]['subtitle'] ?? 'Top-quality computers, components & accessories') ?>
-        </p>
-        <div class="hero-actions">
-            <a href="<?= htmlspecialchars($hero_slides[0]['link_url'] ?? 'products.php') ?>"
-               class="btn-primary-custom" id="hero-btn">
-                <i class="fas fa-shopping-bag"></i>
-                <?= htmlspecialchars($hero_slides[0]['btn_text'] ?? 'Shop Now') ?>
-            </a>
-            <a href="products.php" class="btn-ghost" id="hero-ghost">
-                <?= htmlspecialchars($hero_slides[0]['btn_ghost_text'] ?? 'View All') ?>
-                <i class="fas fa-arrow-right" style="font-size:0.8rem"></i>
-            </a>-->
-        </div>
-    </div>
 
     <!-- Dot navigation -->
     <?php if (count($hero_slides) > 1): ?>

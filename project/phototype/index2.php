@@ -332,7 +332,7 @@ include 'popup.php';
                 'title' => 'Laptops & Notebooks',
                 'desc'  => 'High-performance laptops for gaming, business & everyday use.',
                 'url'   => 'products.php?category=laptops',
-                'img'   => 'assets/categories/laptops.jpg',
+                'img'   => 'uploads/homeassets/laptops.jpg',
                 'color' => '#0d1b2a',
             ],
             [

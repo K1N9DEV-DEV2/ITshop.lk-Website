@@ -65,7 +65,12 @@ if ($pdo) {
         $pdo->exec("UPDATE categories SET slug = LOWER(REPLACE(REPLACE(name,' ','_'),'&','')) WHERE slug = '' OR slug IS NULL");
     } catch (PDOException $e) { /* silently skip */ }
 
-    // ── Ensure ticker table exists ────────────────────────────────────────────
+    // ── PATCH: Ensure products has category2 column ───────────────────────────
+    try {
+        $pdo->exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS category2 VARCHAR(100) NOT NULL DEFAULT ''");
+    } catch (PDOException $e) { /* silently skip */ }
+
+    // ── Ensure ticker table exists ────────────────────────────────────────
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS ticker_items (
             id         INT AUTO_INCREMENT PRIMARY KEY,
@@ -136,8 +141,9 @@ foreach ($db_categories as $cat) {
 }
 
 // ── Live DB queries ───────────────────────────────────────────────────────────
+// PATCH: Added p.category2 to the main products SELECT
 $db_products = dbq(
-    "SELECT p.id, p.name, p.category, p.price, p.original_price,
+    "SELECT p.id, p.name, p.category, p.category2, p.price, p.original_price,
             p.image, p.brand, p.stock_count,
             CASE WHEN p.stock_count > 0 THEN 1 ELSE 0 END as in_stock,
             GROUP_CONCAT(ps.spec_name SEPARATOR '\n') as specs
@@ -307,15 +313,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // ── ADD PRODUCT ───────────────────────────────────────────────────────────
+    // ── ADD PRODUCT ── PATCH: added category2 ────────────────────────────────
     if ($act === 'add_product') {
-        $name     = trim($_POST['name'] ?? '');
-        $brand    = trim($_POST['brand'] ?? '');
-        $category = trim($_POST['category'] ?? '');
-        $price    = floatval($_POST['price'] ?? 0);
-        $orig     = floatval($_POST['original_price'] ?? 0);
-        $stock    = intval($_POST['stock_count'] ?? 0);
-        $image    = trim($_POST['image_url'] ?? '');
+        $name      = trim($_POST['name'] ?? '');
+        $brand     = trim($_POST['brand'] ?? '');
+        $category  = trim($_POST['category'] ?? '');
+        $category2 = trim($_POST['category2'] ?? ''); // PATCH
+        $price     = floatval($_POST['price'] ?? 0);
+        $orig      = floatval($_POST['original_price'] ?? 0);
+        $stock     = intval($_POST['stock_count'] ?? 0);
+        $image     = trim($_POST['image_url'] ?? '');
         if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
@@ -327,8 +334,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
         if ($name && $category && $price > 0) {
             try {
-                $pdo->prepare("INSERT INTO products (name, brand, category, price, original_price, stock_count, image) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                    ->execute([$name, $brand, $category, $price, $orig ?: $price, $stock, $image]);
+                // PATCH: INSERT now includes category2
+                $pdo->prepare("INSERT INTO products (name, brand, category, category2, price, original_price, stock_count, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image]);
                 $new_id = $pdo->lastInsertId();
                 $specs_raw = trim($_POST['specs'] ?? '');
                 if ($specs_raw && $new_id) {
@@ -347,16 +355,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // ── EDIT PRODUCT ──────────────────────────────────────────────────────────
+    // ── EDIT PRODUCT ── PATCH: added category2 ───────────────────────────────
     if ($act === 'edit_product') {
-        $pid      = intval($_POST['product_id'] ?? 0);
-        $name     = trim($_POST['name'] ?? '');
-        $brand    = trim($_POST['brand'] ?? '');
-        $category = trim($_POST['category'] ?? '');
-        $price    = floatval($_POST['price'] ?? 0);
-        $orig     = floatval($_POST['original_price'] ?? 0);
-        $stock    = intval($_POST['stock_count'] ?? 0);
-        $image    = trim($_POST['image_url'] ?? '');
+        $pid       = intval($_POST['product_id'] ?? 0);
+        $name      = trim($_POST['name'] ?? '');
+        $brand     = trim($_POST['brand'] ?? '');
+        $category  = trim($_POST['category'] ?? '');
+        $category2 = trim($_POST['category2'] ?? ''); // PATCH
+        $price     = floatval($_POST['price'] ?? 0);
+        $orig      = floatval($_POST['original_price'] ?? 0);
+        $stock     = intval($_POST['stock_count'] ?? 0);
+        $image     = trim($_POST['image_url'] ?? '');
         if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
@@ -369,8 +378,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         if (!$image) $image = trim($_POST['existing_image'] ?? '');
         if ($pid && $name && $category && $price > 0) {
             try {
-                $pdo->prepare("UPDATE products SET name=?, brand=?, category=?, price=?, original_price=?, stock_count=?, image=? WHERE id=?")
-                    ->execute([$name, $brand, $category, $price, $orig ?: $price, $stock, $image, $pid]);
+                // PATCH: UPDATE now includes category2
+                $pdo->prepare("UPDATE products SET name=?, brand=?, category=?, category2=?, price=?, original_price=?, stock_count=?, image=? WHERE id=?")
+                    ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image, $pid]);
                 $specs_raw = trim($_POST['specs'] ?? '');
                 $pdo->prepare("DELETE FROM product_specs WHERE product_id=?")->execute([$pid]);
                 if ($specs_raw) {
@@ -753,7 +763,7 @@ $status_colors = [
     'cancelled'  => ['bg' => '#fee2e2', 'color' => '#dc2626'],
 ];
 
-// ── Nav items (advertisements removed) ───────────────────────────────────────
+// ── Nav items ─────────────────────────────────────────────────────────────────
 $nav_items = [
     ['page' => 'dashboard',  'icon' => 'fa-gauge-high',   'label' => 'Dashboard',   'roles' => ['admin','superadmin']],
     ['page' => 'products',   'icon' => 'fa-box',          'label' => 'Products',    'roles' => ['admin','superadmin']],
@@ -773,6 +783,16 @@ $icon_options = [
     'fa-fan','fa-bolt','fa-mobile-screen','fa-camera','fa-gamepad','fa-print',
     'fa-network-wired','fa-wifi','fa-battery-full','fa-plug','fa-toolbox',
 ];
+
+// ── PATCH: Helper to render category2 badge ───────────────────────────────────
+function cat2Badge(string $cat2, array $cat_map): string {
+    if (!$cat2) return '';
+    $label = $cat_map[$cat2]['label'] ?? ucfirst(str_replace(['_','-'],' ',$cat2));
+    return '<span class="sb" style="background:#ede9fe;color:#6d28d9;font-size:.63rem;font-weight:700;margin-left:3px" title="2nd Category">'
+         . '<i class="fas fa-tag" style="font-size:.55rem;margin-right:2px"></i>'
+         . htmlspecialchars($label)
+         . '</span>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -999,7 +1019,7 @@ $icon_options = [
         .img-prev img { max-width:100%; max-height:100%; object-fit:contain; display:none; }
         .img-prev .iph { color:var(--ink-muted); font-size:1.7rem; }
         .icon-grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
-        .icon-opt { width:34px; height:34px; border-radius:var(--r-sm); background:var(--surface); border:1.5px solid rgba(10,10,15,.1); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .14s; font-size:.9rem; color:var(--ink-muted); }
+        .icon-opt { width:34px; height:34px; border-radius:var(--r-sm); background:var(--surface); border:1.5px solid rgba(10,10,15,.1); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .14px; font-size:.9rem; color:var(--ink-muted); }
         .icon-opt:hover   { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
         .icon-opt.selected{ border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
         .icon-preview { width:38px; height:38px; border-radius:var(--r-md); background:var(--accent-dim); display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:1.1rem; flex-shrink:0; }
@@ -1206,7 +1226,7 @@ $icon_options = [
             </div>
         </div>
 
-        <!-- ══ TICKER BAR WIDGET ══ -->
+        <!-- Ticker Bar Widget (unchanged) -->
         <style>
             @keyframes tickerDash { from{transform:translateX(0)} to{transform:translateX(-50%)} }
             .db-ticker-wrap { background:var(--card); border-radius:var(--r-xl); box-shadow:var(--shadow); overflow:hidden; margin-bottom:13px; animation:fadeUp .4s .05s ease both; }
@@ -1371,7 +1391,7 @@ $icon_options = [
             <?php else: ?>
             <div style="text-align:center;padding:1.2rem;color:var(--ink-muted);font-size:.82rem">
                 <i class="fas fa-panorama" style="font-size:1.5rem;display:block;margin-bottom:.4rem;opacity:.2"></i>
-                No hero slides yet. Click <strong>Add Slide</strong> to create your first one.
+                No hero slides yet.
             </div>
             <?php endif; ?>
         </div>
@@ -1399,8 +1419,7 @@ $icon_options = [
             </div>
             <?php else: ?>
             <div style="text-align:center;padding:1.2rem;color:var(--ink-muted);font-size:.82rem">
-                <i class="fas fa-window-maximize" style="font-size:1.5rem;display:block;margin-bottom:.4rem;opacity:.2"></i>
-                No popup images yet. Click <strong>Add Image</strong> to create your first one.
+                No popup images yet.
             </div>
             <?php endif; ?>
         </div>
@@ -1437,6 +1456,263 @@ $icon_options = [
 
         <?php /* ─────────── PRODUCTS ─────────── */ ?>
         <?php elseif ($active==='products'): ?>
+
+        <!-- ══ LIMITED-TIME DEALS ══ PATCH: added category2, updated query & table ══ -->
+        <?php
+        $dash_deals = [];
+        if ($pdo) {
+            try {
+                // PATCH: Added category2 to SELECT
+                $stmt = $pdo->query("SELECT id, name, brand, category, category2, price, original_price, stock_count, image FROM products WHERE original_price > price AND stock_count > 0 ORDER BY (original_price - price) DESC LIMIT 5");
+                $dash_deals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {}
+        }
+        ?>
+        <div class="tc" style="margin-bottom:13px">
+            <div class="tc-hdr">
+                <div>
+                    <h3>🔥 Limited-Time Deals</h3>
+                    <p>Products currently on discount — highest savings first</p>
+                </div>
+                <a href="?page=products" class="btn-o btn-sm"><i class="fas fa-arrow-right"></i> Manage Products</a>
+            </div>
+            <?php if ($dash_deals): ?>
+            <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Image</th><th>Product</th>
+                        <th>Category 1</th>
+                        <th>Category 2</th><!-- PATCH: new column -->
+                        <th>Sale Price</th><th>Original Price</th><th>Saving</th><th>Disc %</th>
+                        <th>Stock</th><th>Status</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($dash_deals as $p):
+                    $disc  = $p['original_price'] > 0 ? round((1 - $p['price']/$p['original_price'])*100) : 0;
+                    $saved = $p['original_price'] - $p['price'];
+                    $stk   = (int)$p['stock_count'];
+                    $scls  = $stk <= 0 ? 'so' : ($stk <= 5 ? 'sl' : 'sa');
+                    $slbl  = $stk <= 0 ? 'Out of Stock' : ($stk <= 5 ? 'Low Stock ('.$stk.')' : 'Active');
+                    $cat_label  = $cat_map[$p['category']]['label']  ?? ucfirst($p['category']);
+                    $cat2_val   = $p['category2'] ?? '';   // ← add this line
+                    $cat2_label = $cat_map[$cat2_val]['label'] ?? ($cat2_val ? ucfirst(str_replace(['_','-'],' ',$cat2_val)) : '');
+                    $edit_data = [
+                        'id'=>(int)$p['id'],'name'=>$p['name'],'brand'=>$p['brand']??'',
+                        'category'=>$p['category'],'category2'=>$p['category2']??'',
+                        'price'=>$p['price'],'original_price'=>$p['original_price'],
+                        'stock_count'=>$stk,'image'=>$p['image']??'','specs'=>'',
+                    ];
+                ?>
+                <tr>
+                    <td>
+                        <?php if (!empty($p['image'])): ?>
+                        <img src="../<?= htmlspecialchars($p['image']) ?>" style="width:38px;height:38px;object-fit:contain;border-radius:6px;background:var(--surface)" onerror="this.style.display='none'">
+                        <?php else: ?>
+                        <div style="width:38px;height:38px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:.77rem"><i class="fas fa-box"></i></div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <strong><?= htmlspecialchars($p['name']) ?></strong>
+                        <?php if (!empty($p['brand'])): ?>
+                        <div style="font-size:.68rem;color:var(--ink-muted)"><?= htmlspecialchars($p['brand']) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <!-- PATCH: Category 1 -->
+                    <td><span class="sb si" style="font-size:.67rem"><?= htmlspecialchars($cat_label) ?></span></td>
+                    <!-- PATCH: Category 2 -->
+                    <td>
+                        <?php if ($cat2_label): ?>
+                        <span class="sb" style="background:#ede9fe;color:#6d28d9;font-size:.67rem">
+                            <i class="fas fa-tag" style="font-size:.55rem;margin-right:2px"></i><?= htmlspecialchars($cat2_label) ?>
+                        </span>
+                        <?php else: ?>
+                        <span class="muted" style="font-size:.72rem">—</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><strong style="color:#0cb100">LKR <?= number_format($p['price']) ?></strong></td>
+                    <td class="muted" style="text-decoration:line-through">LKR <?= number_format($p['original_price']) ?></td>
+                    <td><strong style="color:#16a34a;font-size:.82rem">LKR <?= number_format($saved) ?></strong></td>
+                    <td>
+                        <span style="background:#fee2e2;color:#dc2626;font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:100px">
+                            -<?= $disc ?>%
+                        </span>
+                    </td>
+                    <td>
+                        <form method="POST" action="?page=products" class="se-form">
+                            <input type="hidden" name="_action" value="update_stock">
+                            <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
+                            <input type="number" name="stock_count" value="<?= $stk ?>" min="0" class="se-num">
+                            <button type="submit" class="ab warn" title="Save"><i class="fas fa-check"></i></button>
+                        </form>
+                    </td>
+                    <td><span class="sb <?= $scls ?>"><?= $slbl ?></span></td>
+                    <td>
+                        <div style="display:flex;gap:4px">
+                            <a href="../product-details.php?id=<?= $p['id'] ?>" class="ab" target="_blank" title="View"><i class="fas fa-eye"></i></a>
+                            <button class="ab edit" onclick="openEditProduct(<?= htmlspecialchars(json_encode($edit_data), ENT_QUOTES) ?>)" title="Edit"><i class="fas fa-pen"></i></button>
+                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete product #<?= $p['id'] ?>?')">
+                                <input type="hidden" name="_action" value="delete_product">
+                                <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
+                                <button type="submit" class="ab del" title="Delete"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php else: ?>
+            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted);font-size:.85rem">
+                <i class="fas fa-tag" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.18"></i>
+                No discounted products found. Set a product's <strong>Original Price</strong> higher than its <strong>Sale Price</strong> to create a deal.
+            </div>
+            <?php endif; ?>
+        </div>
+
+
+        <!-- ══ BEST SELLING PRODUCTS ══ PATCH: added category2, updated query & table ══ -->
+        <?php
+        $dash_bestsellers = [];
+        if ($pdo) {
+            try {
+                // PATCH: Added p.category2 to SELECT
+                $stmt = $pdo->query(
+                    "SELECT p.id, p.name, p.brand, p.category, p.category2, p.price,
+                            p.original_price, p.stock_count, p.image,
+                            COALESCE(SUM(oi.quantity),0) as total_sold
+                     FROM products p
+                     LEFT JOIN order_items oi ON oi.product_id = p.id
+                     WHERE p.stock_count > 0
+                     GROUP BY p.id
+                     ORDER BY total_sold DESC, p.id ASC
+                     LIMIT 10"
+                );
+                $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {
+                // Fallback if order_items doesn't exist yet
+                try {
+                    // PATCH: Added category2 to fallback SELECT too
+                    $stmt = $pdo->query("SELECT id, name, brand, category, category2, price, original_price, stock_count, image, 0 as total_sold FROM products WHERE stock_count > 0 ORDER BY id ASC LIMIT 10");
+                    $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } catch (PDOException $e2) {}
+            }
+        }
+        $max_sold = !empty($dash_bestsellers) ? max(array_column($dash_bestsellers,'total_sold')) : 1;
+        if ($max_sold < 1) $max_sold = 1;
+        ?>
+        <div class="tc" style="margin-bottom:13px">
+            <div class="tc-hdr">
+                <div>
+                    <h3>⭐ Best Selling Products</h3>
+                    <p>Top 10 by units sold across all orders</p>
+                </div>
+                <a href="?page=products" class="btn-o btn-sm"><i class="fas fa-arrow-right"></i> Manage Products</a>
+            </div>
+            <?php if ($dash_bestsellers): ?>
+            <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th><th>Image</th><th>Product</th>
+                        <th>Category 1</th>
+                        <th>Category 2</th><!-- PATCH: new column -->
+                        <th>Price (LKR)</th><th>Units Sold</th><th>Sales Bar</th>
+                        <th>Stock</th><th>Status</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($dash_bestsellers as $rank => $p):
+                    $stk   = (int)$p['stock_count'];
+                    $scls  = $stk <= 0 ? 'so' : ($stk <= 5 ? 'sl' : 'sa');
+                    $slbl  = $stk <= 0 ? 'Out of Stock' : ($stk <= 5 ? 'Low Stock' : 'Active');
+                    $cat_label  = $cat_map[$p['category']]['label']  ?? ucfirst($p['category']);
+                    $cat2_label = $cat_map[$p['category2']]['label'] ?? (($p['category2'] ?? '') ? ucfirst(str_replace(['_','-'],' ',$p['category2'])) : '');
+                    $sold  = (int)($p['total_sold'] ?? 0);
+                    $bar_w = round($sold / $max_sold * 100);
+                    $medals = ['🥇','🥈','🥉'];
+                    $medal  = isset($medals[$rank]) ? $medals[$rank] : '#'.($rank+1);
+                    $medal_colors = ['#f59e0b','#94a3b8','#b45309'];
+                    $medal_color  = $rank < 3 ? $medal_colors[$rank] : 'var(--ink-muted)';
+                    $edit_data = [
+                        'id'=>(int)$p['id'],'name'=>$p['name'],'brand'=>$p['brand']??'',
+                        'category'=>$p['category'],'category2'=>$p['category2']??'',
+                        'price'=>$p['price'],'original_price'=>$p['original_price']??$p['price'],
+                        'stock_count'=>$stk,'image'=>$p['image']??'','specs'=>'',
+                    ];
+                ?>
+                <tr>
+                    <td style="text-align:center;font-size:.9rem;font-weight:800;color:<?= $medal_color ?>"><?= $medal ?></td>
+                    <td>
+                        <?php if (!empty($p['image'])): ?>
+                        <img src="../<?= htmlspecialchars($p['image']) ?>" style="width:38px;height:38px;object-fit:contain;border-radius:6px;background:var(--surface)" onerror="this.style.display='none'">
+                        <?php else: ?>
+                        <div style="width:38px;height:38px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:.77rem"><i class="fas fa-microchip"></i></div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <strong><?= htmlspecialchars($p['name']) ?></strong>
+                        <?php if (!empty($p['brand'])): ?>
+                        <div style="font-size:.68rem;color:var(--ink-muted)"><?= htmlspecialchars($p['brand']) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <!-- PATCH: Category 1 -->
+                    <td><span class="sb si" style="font-size:.67rem"><?= htmlspecialchars($cat_label) ?></span></td>
+                    <!-- PATCH: Category 2 -->
+                    <td>
+                        <?php if ($cat2_label): ?>
+                        <span class="sb" style="background:#ede9fe;color:#6d28d9;font-size:.67rem">
+                            <i class="fas fa-tag" style="font-size:.55rem;margin-right:2px"></i><?= htmlspecialchars($cat2_label) ?>
+                        </span>
+                        <?php else: ?>
+                        <span class="muted" style="font-size:.72rem">—</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><strong>LKR <?= number_format($p['price']) ?></strong></td>
+                    <td>
+                        <strong style="font-size:.95rem;color:var(--ink)"><?= number_format($sold) ?></strong>
+                        <div style="font-size:.65rem;color:var(--ink-muted)"><?= $sold === 1 ? 'unit' : 'units' ?></div>
+                    </td>
+                    <td style="min-width:110px">
+                        <div style="background:var(--surface);border-radius:100px;height:6px;overflow:hidden">
+                            <div style="width:<?= $bar_w ?>%;height:100%;background:var(--accent);border-radius:100px"></div>
+                        </div>
+                        <div style="font-size:.62rem;color:var(--ink-muted);margin-top:2px"><?= $bar_w ?>% of top</div>
+                    </td>
+                    <td>
+                        <form method="POST" action="?page=products" class="se-form">
+                            <input type="hidden" name="_action" value="update_stock">
+                            <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
+                            <input type="number" name="stock_count" value="<?= $stk ?>" min="0" class="se-num">
+                            <button type="submit" class="ab warn" title="Save stock"><i class="fas fa-check"></i></button>
+                        </form>
+                    </td>
+                    <td><span class="sb <?= $scls ?>"><?= $slbl ?></span></td>
+                    <td>
+                        <div style="display:flex;gap:4px">
+                            <a href="../product-details.php?id=<?= $p['id'] ?>" class="ab" target="_blank" title="View on site"><i class="fas fa-eye"></i></a>
+                            <button class="ab edit" onclick="openEditProduct(<?= htmlspecialchars(json_encode($edit_data), ENT_QUOTES) ?>)" title="Edit product"><i class="fas fa-pen"></i></button>
+                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete product #<?= $p['id'] ?>?')">
+                                <input type="hidden" name="_action" value="delete_product">
+                                <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
+                                <button type="submit" class="ab del" title="Delete"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php else: ?>
+            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted);font-size:.85rem">
+                <i class="fas fa-star" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.18"></i>
+                No products in stock yet.
+            </div>
+            <?php endif; ?>
+        </div>
 
         <div class="pg-hdr">
             <div class="pg-hdr-l">
@@ -1475,7 +1751,8 @@ $icon_options = [
             <div class="tbl-wrap">
             <table id="prodTable">
                 <thead>
-                    <tr><th>ID</th><th>Image</th><th>Product / Specs</th><th>Brand</th><th>Category</th><th>Price (LKR)</th><th>Orig. Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr>
+                    <!-- PATCH: Added Category 2 column header -->
+                    <tr><th>ID</th><th>Image</th><th>Product / Specs</th><th>Brand</th><th>Category 1</th><th>Category 2</th><th>Price (LKR)</th><th>Orig. Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                 <?php if ($db_products): foreach ($db_products as $p):
@@ -1483,12 +1760,16 @@ $icon_options = [
                     $scls=$stk===0?'so':($stk<=5?'sl':'sa');
                     $slbl=$stk===0?'Out of Stock':($stk<=5?'Low Stock':'Active');
                     $cat_label=$cat_map[$p['category']]['label'] ?? ucfirst($p['category']);
+                    // PATCH: category2 label
+                    $cat2_val = $p['category2'] ?? '';
+                    $cat2_label = $cat_map[$cat2_val]['label'] ?? ($cat2_val ? ucfirst(str_replace(['_','-'],' ',$cat2_val)) : '');
                     $is_orphan = $p['category'] && !isset($cat_map[$p['category']]);
                     $edit_data = [
                         'id'             => (int)$p['id'],
                         'name'           => $p['name'],
                         'brand'          => $p['brand'] ?? '',
                         'category'       => $p['category'],
+                        'category2'      => $cat2_val,  // PATCH
                         'price'          => $p['price'],
                         'original_price' => $p['original_price'] ?? '',
                         'stock_count'    => $stk,
@@ -1512,11 +1793,22 @@ $icon_options = [
                         <?php endif; ?>
                     </td>
                     <td><?= htmlspecialchars($p['brand']??'—') ?></td>
+                    <!-- PATCH: Category 1 -->
                     <td>
                         <span class="sb <?= $is_orphan?'sw':'si' ?>" style="font-size:.67rem">
                             <?php if ($is_orphan): ?><i class="fas fa-triangle-exclamation" style="font-size:.6rem"></i> <?php endif; ?>
                             <?= htmlspecialchars($cat_label) ?>
                         </span>
+                    </td>
+                    <!-- PATCH: Category 2 -->
+                    <td>
+                        <?php if ($cat2_label): ?>
+                        <span class="sb" style="background:#ede9fe;color:#6d28d9;font-size:.67rem">
+                            <i class="fas fa-tag" style="font-size:.55rem;margin-right:2px"></i><?= htmlspecialchars($cat2_label) ?>
+                        </span>
+                        <?php else: ?>
+                        <span style="color:var(--ink-muted);font-size:.72rem">—</span>
+                        <?php endif; ?>
                     </td>
                     <td><strong><?= number_format($p['price'],2) ?></strong></td>
                     <td class="muted"><?= $p['original_price']?number_format($p['original_price'],2):'—' ?></td>
@@ -1545,7 +1837,7 @@ $icon_options = [
                     </td>
                 </tr>
                 <?php endforeach; else: ?>
-                <tr><td colspan="10" style="text-align:center;padding:3rem;color:var(--ink-muted)">No products found.</td></tr>
+                <tr><td colspan="11" style="text-align:center;padding:3rem;color:var(--ink-muted)">No products found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
@@ -1848,7 +2140,7 @@ $icon_options = [
             </div>
             <?php if (!$ticker_enabled): ?>
             <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:var(--r-md);padding:.6rem 1rem;font-size:.82rem;color:#dc2626;font-weight:600;margin-top:.5rem">
-                <i class="fas fa-triangle-exclamation"></i> Ticker is currently <strong>disabled globally</strong> — visitors cannot see it. Click "Enable Ticker" to show it.
+                <i class="fas fa-triangle-exclamation"></i> Ticker is currently <strong>disabled globally</strong>.
             </div>
             <?php endif; ?>
         </div>
@@ -1902,7 +2194,7 @@ $icon_options = [
         <?php if (empty($db_ticker_items)): ?>
         <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:2.5rem;text-align:center;color:var(--ink-muted)">
             <i class="fas fa-bullhorn" style="font-size:2rem;margin-bottom:.6rem;display:block;opacity:.2"></i>
-            No ticker messages yet. Click <strong>Add Message</strong> to create your first one.
+            No ticker messages yet.
         </div>
         <?php else: ?>
         <div class="ticker-cards-grid">
@@ -2012,14 +2304,11 @@ $icon_options = [
         </div>
 
 
-        <?php /* ─────────── MEDIA (Hero Slides + Popup Images) ─────────── */ ?>
+        <?php /* ─────────── MEDIA ─────────── */ ?>
         <?php elseif ($active==='media'): ?>
 
         <div class="pg-hdr">
-            <div class="pg-hdr-l">
-                <h2>Media</h2>
-                <p>Manage hero slider and popup images</p>
-            </div>
+            <div class="pg-hdr-l"><h2>Media</h2><p>Manage hero slider and popup images</p></div>
             <div class="pg-hdr-r">
                 <?php if ($active_tab === 'hero_slides'): ?>
                 <button class="btn-p" onclick="openModal('addHeroSlideModal')"><i class="fas fa-plus"></i> Add Slide</button>
@@ -2029,102 +2318,45 @@ $icon_options = [
             </div>
         </div>
 
-        <!-- Sub-tabs -->
         <div class="sub-tabs">
             <a href="?page=media&tab=hero_slides"  class="sub-tab <?= $active_tab==='hero_slides'?'active':'' ?>"><i class="fas fa-panorama"></i> Hero Slider</a>
             <a href="?page=media&tab=popup_images" class="sub-tab <?= $active_tab==='popup_images'?'active':'' ?>"><i class="fas fa-window-maximize"></i> Popup Images</a>
         </div>
 
         <?php if ($active_tab === 'hero_slides'): ?>
-        <!-- ══ HERO SLIDES TAB ══ -->
-
         <div class="ad-stats">
-            <?php $hstats=[
-                ['Total Slides',  count($db_hero_slides),  'fa-panorama',    '#0cb100'],
-                ['Active',        $active_hero_slides,     'fa-circle-check','#3b82f6'],
-                ['Inactive',      count($db_hero_slides)-$active_hero_slides,'fa-circle-pause','#f59e0b'],
-            ];
+            <?php $hstats=[['Total Slides',count($db_hero_slides),'fa-panorama','#0cb100'],['Active',$active_hero_slides,'fa-circle-check','#3b82f6'],['Inactive',count($db_hero_slides)-$active_hero_slides,'fa-circle-pause','#f59e0b']];
             foreach ($hstats as $s): ?>
-            <div class="ad-stat">
-                <div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div>
-                <div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div>
-            </div>
+            <div class="ad-stat"><div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div><div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div></div>
             <?php endforeach; ?>
-        </div>
-
-        <div class="cc" style="margin-bottom:1.2rem">
-            <h3>Live Preview</h3>
-            <p>Approximate appearance of your hero slider</p>
-            <div style="border-radius:var(--r-md);overflow:hidden;background:#0d0d14;min-height:120px;position:relative;display:flex;align-items:center;justify-content:center">
-                <?php $first_active_slide = null; foreach ($db_hero_slides as $s) { if ($s['is_active']) { $first_active_slide = $s; break; } } ?>
-                <?php if ($first_active_slide && $first_active_slide['image_url']): ?>
-                <img src="../<?= htmlspecialchars($first_active_slide['image_url']) ?>" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.45" onerror="this.remove()">
-                <?php endif; ?>
-                <div style="position:relative;z-index:1;text-align:center;padding:1.5rem">
-                    <?php if ($first_active_slide): ?>
-                    <div style="font-size:.62rem;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.4rem">● Live</div>
-                    <div style="font-size:1rem;font-weight:800;color:#fff;margin-bottom:.3rem"><?= htmlspecialchars($first_active_slide['title'] ?: 'Hero Slide') ?></div>
-                    <div style="font-size:.74rem;color:rgba(255,255,255,.55)"><?= htmlspecialchars($first_active_slide['subtitle']) ?></div>
-                    <?php else: ?>
-                    <div style="color:rgba(255,255,255,.25);font-size:.85rem">No active slides — add one below</div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <?php if ($active_hero_slides > 1): ?>
-            <div style="text-align:center;margin-top:.6rem;font-size:.73rem;color:var(--ink-muted)">
-                <i class="fas fa-images" style="margin-right:4px"></i> <?= $active_hero_slides ?> slides will rotate automatically
-            </div>
-            <?php endif; ?>
         </div>
 
         <?php if (empty($db_hero_slides)): ?>
         <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)">
             <i class="fas fa-panorama" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>
-            No hero slides yet. Click <strong>Add Slide</strong> to create your first one.
+            No hero slides yet.
         </div>
         <?php else: ?>
         <div class="media-cards">
             <?php foreach ($db_hero_slides as $i => $slide):
-                $s_edit = ['id'=>$slide['id'],'image_url'  => $slide['image_url'],'link_url'   => $slide['link_url'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
+                $s_edit = ['id'=>$slide['id'],'image_url'=>$slide['image_url'],'link_url'=>$slide['link_url'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
             ?>
             <div class="media-card <?= $slide['is_active'] ? '' : 'inactive' ?>" style="animation-delay:<?= $i*40 ?>ms">
                 <div class="media-img-wrap">
-                    <?php if ($slide['image_url']): ?>
-                    <img src="../<?= htmlspecialchars($slide['image_url']) ?>" alt="" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-panorama></i></div>'">
-                    <?php else: ?>
-                    <div class="media-img-ph"><i class="fas fa-panorama"></i></div>
-                    <?php endif; ?>
-                    <span class="ad-status-pill" style="background:<?= $slide['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $slide['is_active']?'#15803d':'#dc2626' ?>">
-                        <i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i>
-                        <?= $slide['is_active'] ? 'Active' : 'Inactive' ?>
-                    </span>
+                    <?php if ($slide['image_url']): ?><img src="../<?= htmlspecialchars($slide['image_url']) ?>" alt="" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-panorama></i></div>'"><?php else: ?><div class="media-img-ph"><i class="fas fa-panorama"></i></div><?php endif; ?>
+                    <span class="ad-status-pill" style="background:<?= $slide['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $slide['is_active']?'#15803d':'#dc2626' ?>"><i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i> <?= $slide['is_active'] ? 'Active' : 'Inactive' ?></span>
                     <span class="ad-sort-pill">Order #<?= $slide['sort_order'] ?></span>
                 </div>
                 <div class="media-card-body">
                     <strong><?= htmlspecialchars($slide['title'] ?: 'Slide #'.$slide['id']) ?></strong>
                     <div class="sub"><?= htmlspecialchars($slide['subtitle'] ?: '—') ?></div>
-                    <div style="display:flex;gap:5px;flex-wrap:wrap">
-                        <?php if ($slide['btn_text']): ?><span class="ad-meta-tag"><i class="fas fa-arrow-pointer"></i><?= htmlspecialchars($slide['btn_text']) ?></span><?php endif; ?>
-                        <?php if ($slide['btn_ghost_text']): ?><span class="ad-meta-tag"><?= htmlspecialchars($slide['btn_ghost_text']) ?></span><?php endif; ?>
-                        <?php if ($slide['link_url']): ?><span class="ad-meta-tag"><i class="fas fa-link"></i><?= htmlspecialchars(substr($slide['link_url'],0,18)) ?>…</span><?php endif; ?>
-                    </div>
                 </div>
                 <div class="media-card-foot">
                     <span style="font-size:.68rem;color:var(--ink-muted)"><i class="fas fa-calendar" style="margin-right:3px"></i><?= date('d M Y', strtotime($slide['created_at'])) ?></span>
                     <div style="display:flex;gap:4px">
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="_action" value="toggle_hero_slide">
-                            <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
-                            <button type="submit" class="ab <?= $slide['is_active'] ? 'warn' : '' ?>" title="<?= $slide['is_active']?'Deactivate':'Activate' ?>">
-                                <i class="fas fa-<?= $slide['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
-                            </button>
-                        </form>
-                        <button class="ab edit" title="Edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this hero slide?')">
-                            <input type="hidden" name="_action" value="delete_hero_slide">
-                            <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
-                            <button type="submit" class="ab del"><i class="fas fa-trash"></i></button>
-                        </form>
+                        <form method="POST" style="display:inline"><input type="hidden" name="_action" value="toggle_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab <?= $slide['is_active'] ? 'warn' : '' ?>" title="Toggle"><i class="fas fa-<?= $slide['is_active'] ? 'eye-slash' : 'eye' ?>"></i></button></form>
+                        <button class="ab edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
+                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
                     </div>
                 </div>
             </div>
@@ -2133,69 +2365,39 @@ $icon_options = [
         <?php endif; ?>
 
         <div class="tc">
-            <div class="tc-hdr"><div><h3>All Hero Slides</h3><p>Manage the homepage hero slider images</p></div></div>
-            <div class="tbl-wrap">
-            <table>
-                <thead><tr><th>ID</th><th>Preview</th><th>Title</th><th>Subtitle</th><th>Buttons</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead>
+            <div class="tc-hdr"><div><h3>All Hero Slides</h3></div></div>
+            <div class="tbl-wrap"><table>
+                <thead><tr><th>ID</th><th>Preview</th><th>Title</th><th>Subtitle</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                     <?php if ($db_hero_slides): foreach ($db_hero_slides as $slide):
                         $s_edit = ['id'=>$slide['id'],'title'=>$slide['title'],'subtitle'=>$slide['subtitle'],'image_url'=>$slide['image_url'],'link_url'=>$slide['link_url'],'btn_text'=>$slide['btn_text'],'btn_ghost_text'=>$slide['btn_ghost_text'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
                     ?>
                     <tr>
                         <td class="muted"><?= $slide['id'] ?></td>
-                        <td><?php if ($slide['image_url']): ?><img src="../<?= htmlspecialchars($slide['image_url']) ?>" style="width:56px;height:36px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'"><?php else: ?><div style="width:56px;height:36px;background:var(--surface);border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted)"><i class="fas fa-image"></i></div><?php endif; ?></td>
+                        <td><?php if ($slide['image_url']): ?><img src="../<?= htmlspecialchars($slide['image_url']) ?>" style="width:56px;height:36px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'"><?php else: ?><div style="width:56px;height:36px;background:var(--surface);border-radius:5px;display:flex;align-items:center;justify-content:center"><i class="fas fa-image" style="color:var(--ink-muted)"></i></div><?php endif; ?></td>
                         <td><strong><?= htmlspecialchars($slide['title'] ?: '—') ?></strong></td>
-                        <td class="muted" style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($slide['subtitle'] ?: '—') ?></td>
-                        <td><span style="font-size:.71rem;color:var(--ink-muted)"><?= htmlspecialchars($slide['btn_text']) ?> / <?= htmlspecialchars($slide['btn_ghost_text']) ?></span></td>
+                        <td class="muted"><?= htmlspecialchars($slide['subtitle'] ?: '—') ?></td>
                         <td class="muted"><?= $slide['sort_order'] ?></td>
-                        <td>
-                            <form method="POST" style="display:inline">
-                                <input type="hidden" name="_action" value="toggle_hero_slide">
-                                <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
-                                <button type="submit" class="sb <?= $slide['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $slide['is_active']?'● Active':'● Inactive' ?></button>
-                            </form>
-                        </td>
-                        <td>
-                            <div style="display:flex;gap:4px">
-                                <button class="ab edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
-                            </div>
-                        </td>
+                        <td><form method="POST" style="display:inline"><input type="hidden" name="_action" value="toggle_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="sb <?= $slide['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $slide['is_active']?'● Active':'● Inactive' ?></button></form></td>
+                        <td><div style="display:flex;gap:4px"><button class="ab edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button><form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form></div></td>
                     </tr>
-                    <?php endforeach; else: ?>
-                    <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--ink-muted)">No hero slides yet.</td></tr>
-                    <?php endif; ?>
+                    <?php endforeach; else: ?><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--ink-muted)">No hero slides yet.</td></tr><?php endif; ?>
                 </tbody>
-            </table>
-            </div>
+            </table></div>
         </div>
 
-        <?php else: /* popup_images tab */ ?>
-        <!-- ══ POPUP IMAGES TAB ══ -->
-
+        <?php else: /* popup_images */ ?>
         <div class="ad-stats">
-            <?php $pstats=[
-                ['Total Images',  count($db_popup_images),  'fa-window-maximize','#0cb100'],
-                ['Active',        $active_popup_images,     'fa-circle-check',   '#3b82f6'],
-                ['Inactive',      count($db_popup_images)-$active_popup_images,'fa-circle-pause','#f59e0b'],
-            ];
+            <?php $pstats=[['Total Images',count($db_popup_images),'fa-window-maximize','#0cb100'],['Active',$active_popup_images,'fa-circle-check','#3b82f6'],['Inactive',count($db_popup_images)-$active_popup_images,'fa-circle-pause','#f59e0b']];
             foreach ($pstats as $s): ?>
-            <div class="ad-stat">
-                <div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div>
-                <div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div>
-            </div>
+            <div class="ad-stat"><div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div><div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div></div>
             <?php endforeach; ?>
-        </div>
-
-        <div class="db-warn" style="margin-bottom:1rem">
-            <i class="fas fa-info-circle"></i>
-            The popup carousel shows all <strong>active</strong> images in order.
         </div>
 
         <?php if (empty($db_popup_images)): ?>
         <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)">
             <i class="fas fa-window-maximize" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>
-            No popup images yet. Click <strong>Add Popup Image</strong> to create your first one.
+            No popup images yet.
         </div>
         <?php else: ?>
         <div class="media-cards">
@@ -2205,32 +2407,19 @@ $icon_options = [
             <div class="media-card <?= $pi['is_active'] ? '' : 'inactive' ?>" style="animation-delay:<?= $i*40 ?>ms">
                 <div class="media-img-wrap">
                     <img src="../<?= htmlspecialchars($pi['image_src']) ?>" alt="<?= htmlspecialchars($pi['alt_text']) ?>" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-image></i></div>'">
-                    <span class="ad-status-pill" style="background:<?= $pi['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $pi['is_active']?'#15803d':'#dc2626' ?>">
-                        <i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i>
-                        <?= $pi['is_active'] ? 'Active' : 'Inactive' ?>
-                    </span>
+                    <span class="ad-status-pill" style="background:<?= $pi['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $pi['is_active']?'#15803d':'#dc2626' ?>"><i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i> <?= $pi['is_active'] ? 'Active' : 'Inactive' ?></span>
                     <span class="ad-sort-pill">Order #<?= $pi['sort_order'] ?></span>
                 </div>
                 <div class="media-card-body">
                     <strong><?= htmlspecialchars($pi['alt_text'] ?: 'Popup #'.$pi['id']) ?></strong>
-                    <div class="sub"><?= $pi['link_url'] ? '<i class="fas fa-link" style="font-size:.62rem;margin-right:3px"></i>'.htmlspecialchars(substr($pi['link_url'],0,30)) : 'No link' ?></div>
+                    <div class="sub"><?= $pi['link_url'] ? htmlspecialchars(substr($pi['link_url'],0,30)) : 'No link' ?></div>
                 </div>
                 <div class="media-card-foot">
                     <span style="font-size:.68rem;color:var(--ink-muted)"><i class="fas fa-calendar" style="margin-right:3px"></i><?= date('d M Y', strtotime($pi['created_at'])) ?></span>
                     <div style="display:flex;gap:4px">
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="_action" value="toggle_popup_image">
-                            <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
-                            <button type="submit" class="ab <?= $pi['is_active'] ? 'warn' : '' ?>" title="<?= $pi['is_active']?'Deactivate':'Activate' ?>">
-                                <i class="fas fa-<?= $pi['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
-                            </button>
-                        </form>
+                        <form method="POST" style="display:inline"><input type="hidden" name="_action" value="toggle_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab <?= $pi['is_active'] ? 'warn' : '' ?>" title="Toggle"><i class="fas fa-<?= $pi['is_active'] ? 'eye-slash' : 'eye' ?>"></i></button></form>
                         <button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this popup image?')">
-                            <input type="hidden" name="_action" value="delete_popup_image">
-                            <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
-                            <button type="submit" class="ab del"><i class="fas fa-trash"></i></button>
-                        </form>
+                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
                     </div>
                 </div>
             </div>
@@ -2239,9 +2428,8 @@ $icon_options = [
         <?php endif; ?>
 
         <div class="tc">
-            <div class="tc-hdr"><div><h3>All Popup Images</h3><p>Shown in the page-load modal carousel</p></div></div>
-            <div class="tbl-wrap">
-            <table>
+            <div class="tc-hdr"><div><h3>All Popup Images</h3></div></div>
+            <div class="tbl-wrap"><table>
                 <thead><tr><th>ID</th><th>Preview</th><th>Alt Text</th><th>Link</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                     <?php if ($db_popup_images): foreach ($db_popup_images as $pi):
@@ -2251,31 +2439,16 @@ $icon_options = [
                         <td class="muted"><?= $pi['id'] ?></td>
                         <td><img src="../<?= htmlspecialchars($pi['image_src']) ?>" style="width:50px;height:38px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'"></td>
                         <td><strong><?= htmlspecialchars($pi['alt_text'] ?: '—') ?></strong></td>
-                        <td class="muted" style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= $pi['link_url'] ? '<a href="'.htmlspecialchars($pi['link_url']).'" target="_blank" style="color:var(--accent);font-size:.77rem">'.htmlspecialchars(substr($pi['link_url'],0,25)).'</a>' : '—' ?></td>
+                        <td class="muted"><?= $pi['link_url'] ? '<a href="'.htmlspecialchars($pi['link_url']).'" target="_blank" style="color:var(--accent);font-size:.77rem">'.htmlspecialchars(substr($pi['link_url'],0,25)).'</a>' : '—' ?></td>
                         <td class="muted"><?= $pi['sort_order'] ?></td>
-                        <td>
-                            <form method="POST" style="display:inline">
-                                <input type="hidden" name="_action" value="toggle_popup_image">
-                                <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
-                                <button type="submit" class="sb <?= $pi['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $pi['is_active']?'● Active':'● Inactive' ?></button>
-                            </form>
-                        </td>
-                        <td>
-                            <div style="display:flex;gap:4px">
-                                <button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
-                            </div>
-                        </td>
+                        <td><form method="POST" style="display:inline"><input type="hidden" name="_action" value="toggle_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="sb <?= $pi['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $pi['is_active']?'● Active':'● Inactive' ?></button></form></td>
+                        <td><div style="display:flex;gap:4px"><button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button><form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form></div></td>
                     </tr>
-                    <?php endforeach; else: ?>
-                    <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--ink-muted)">No popup images yet.</td></tr>
-                    <?php endif; ?>
+                    <?php endforeach; else: ?><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--ink-muted)">No popup images yet.</td></tr><?php endif; ?>
                 </tbody>
-            </table>
-            </div>
+            </table></div>
         </div>
-
-        <?php endif; /* end media sub-tabs */ ?>
+        <?php endif; ?>
 
 
         <?php /* ─────────── REPORTS ─────────── */ ?>
@@ -2287,84 +2460,28 @@ $icon_options = [
         </div>
 
         <div class="stats-g" style="margin-bottom:1.25rem">
-            <?php
-            $rs=[
-                ['Total Revenue',   'LKR '.number_format($order_stats['revenue']??0), 'all orders', true, '#0cb100'],
-                ['Total Orders',    $order_stats['total_orders']??count($db_orders),  'all time',   true, '#3b82f6'],
-                ['Pending Orders',  $pending_count,                                   'to fulfill', ($pending_count===0), '#f59e0b'],
-                ['Catalogue Size',  $agg['total_products'],                           'products',   true, '#8b5cf6'],
-            ];
+            <?php $rs=[['Total Revenue','LKR '.number_format($order_stats['revenue']??0),'all orders',true,'#0cb100'],['Total Orders',$order_stats['total_orders']??count($db_orders),'all time',true,'#3b82f6'],['Pending Orders',$pending_count,'to fulfill',($pending_count===0),'#f59e0b'],['Catalogue Size',$agg['total_products'],'products',true,'#8b5cf6']];
             foreach ($rs as $i=>$r): ?>
             <div class="stat-c" style="animation-delay:<?= $i*55 ?>ms">
                 <div class="stat-ico" style="background:<?= $r[4] ?>18;color:<?= $r[4] ?>"><i class="fas fa-chart-simple"></i></div>
-                <div class="stat-b">
-                    <div class="stat-lbl"><?= $r[0] ?></div>
-                    <div class="stat-val"><?= $r[1] ?></div>
-                    <span class="stat-d <?= $r[3]?'up':'dn' ?>"><i class="fas fa-arrow-<?= $r[3]?'up':'down' ?>"></i> <?= $r[2] ?></span>
-                </div>
+                <div class="stat-b"><div class="stat-lbl"><?= $r[0] ?></div><div class="stat-val"><?= $r[1] ?></div><span class="stat-d <?= $r[3]?'up':'dn' ?>"><i class="fas fa-arrow-<?= $r[3]?'up':'down' ?>"></i> <?= $r[2] ?></span></div>
             </div>
             <?php endforeach; ?>
         </div>
 
         <div class="g2">
-            <div class="cc">
-                <h3>Products by Category</h3>
-                <p>Distribution of catalogue items</p>
-                <?php if ($cat_counts):
-                    $has_products = array_filter($cat_counts, fn($c)=>$c['cnt']>0);
-                    if ($has_products):
-                        $mc2=max(array_column(array_values($has_products),'cnt'));
-                        foreach ($has_products as $cc):
-                            $pct=$mc2>0?round($cc['cnt']/$mc2*100):0; ?>
-                <div class="pw">
-                    <div class="pw-l"><span><?= htmlspecialchars($cc['name']) ?></span><span><?= $cc['cnt'] ?> products</span></div>
-                    <div class="pw-bg"><div class="pw-f" style="width:<?= $pct ?>%"></div></div>
-                </div>
-                <?php endforeach; else: ?><p style="color:var(--ink-muted);font-size:.82rem">No products assigned.</p><?php endif;
-                endif; ?>
+            <div class="cc"><h3>Products by Category</h3><p>Distribution of catalogue items</p>
+                <?php if ($cat_counts): $has_products=array_filter($cat_counts,fn($c)=>$c['cnt']>0);
+                if ($has_products): $mc2=max(array_column(array_values($has_products),'cnt'));
+                foreach ($has_products as $cc): $pct=$mc2>0?round($cc['cnt']/$mc2*100):0; ?>
+                <div class="pw"><div class="pw-l"><span><?= htmlspecialchars($cc['name']) ?></span><span><?= $cc['cnt'] ?> products</span></div><div class="pw-bg"><div class="pw-f" style="width:<?= $pct ?>%"></div></div></div>
+                <?php endforeach; else: ?><p style="color:var(--ink-muted);font-size:.82rem">No products assigned.</p><?php endif; endif; ?>
             </div>
-
-            <div class="cc">
-                <h3>Order Status Breakdown</h3>
-                <p>All orders by current status</p>
-                <?php
-                $osm=[];
-                foreach ($db_orders as $o) { $s=strtolower($o['status']??'pending'); $osm[$s]=($osm[$s]??0)+1; }
-                $ost=array_sum($osm);
-                $oscol=['completed'=>'#0cb100','shipped'=>'#3b82f6','processing'=>'#8b5cf6','pending'=>'#f59e0b','cancelled'=>'#ef4444'];
-                foreach ($osm as $s=>$cnt):
-                    $pct=$ost>0?round($cnt/$ost*100):0;
-                    $col=$oscol[$s]??'#6b7280';
-                ?>
-                <div class="top-item">
-                    <div style="width:9px;height:9px;border-radius:3px;background:<?= $col ?>;flex-shrink:0"></div>
-                    <div class="top-info"><strong><?= ucfirst($s) ?></strong><span><?= $cnt ?> orders</span></div>
-                    <div style="display:flex;align-items:center;gap:7px">
-                        <div style="width:75px;background:var(--surface);border-radius:100px;height:5px;overflow:hidden"><div style="width:<?= $pct ?>%;height:100%;background:<?= $col ?>;border-radius:100px"></div></div>
-                        <strong style="font-size:.8rem;width:26px;text-align:right"><?= $pct ?>%</strong>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-                <?php if (!$osm): ?><p style="color:var(--ink-muted);font-size:.82rem">No order data.</p><?php endif; ?>
-            </div>
-        </div>
-
-        <div class="cc">
-            <h3>Inventory Health</h3>
-            <p>Stock status across all products</p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:11px;margin-top:.4rem">
-                <?php
-                $ih=[
-                    ['Healthy Stock',  count(array_filter($db_products,fn($p)=>$p['stock_count']>5)),  '#0cb100'],
-                    ['Low Stock (≤5)', count(array_filter($db_products,fn($p)=>$p['stock_count']>0&&$p['stock_count']<=5)), '#f59e0b'],
-                    ['Out of Stock',   (int)($agg['out_of_stock']??0), '#ef4444'],
-                ];
-                foreach ($ih as $h): ?>
-                <div style="background:var(--surface);border-radius:var(--r-md);padding:.9rem;text-align:center">
-                    <div style="font-size:1.55rem;font-weight:800;color:<?= $h[2] ?>"><?= $h[1] ?></div>
-                    <div style="font-size:.72rem;color:var(--ink-muted);font-weight:600;margin-top:2px"><?= $h[0] ?></div>
-                </div>
-                <?php endforeach; ?>
+            <div class="cc"><h3>Order Status Breakdown</h3><p>All orders by current status</p>
+                <?php $osm=[];foreach($db_orders as $o){$s=strtolower($o['status']??'pending');$osm[$s]=($osm[$s]??0)+1;}$ost=array_sum($osm);$oscol=['completed'=>'#0cb100','shipped'=>'#3b82f6','processing'=>'#8b5cf6','pending'=>'#f59e0b','cancelled'=>'#ef4444'];
+                foreach($osm as $s=>$cnt):$pct=$ost>0?round($cnt/$ost*100):0;$col=$oscol[$s]??'#6b7280'; ?>
+                <div class="top-item"><div style="width:9px;height:9px;border-radius:3px;background:<?= $col ?>;flex-shrink:0"></div><div class="top-info"><strong><?= ucfirst($s) ?></strong><span><?= $cnt ?> orders</span></div><div style="display:flex;align-items:center;gap:7px"><div style="width:75px;background:var(--surface);border-radius:100px;height:5px;overflow:hidden"><div style="width:<?= $pct ?>%;height:100%;background:<?= $col ?>;border-radius:100px"></div></div><strong style="font-size:.8rem;width:26px;text-align:right"><?= $pct ?>%</strong></div></div>
+                <?php endforeach; if(!$osm):?><p style="color:var(--ink-muted);font-size:.82rem">No order data.</p><?php endif; ?>
             </div>
         </div>
 
@@ -2384,53 +2501,30 @@ $icon_options = [
         <div class="sc">
             <div class="sc-hdr"><i class="fas fa-store"></i> Store Information</div>
             <?php $store_fields=[['Store Name','Public display name','text','IT Shop.LK'],['Contact Email','Order & support email','email','info@itshop.lk'],['WhatsApp Number','Floating chat button','tel','+94 77 000 0000'],['Store Address','Physical location','text','Colombo 04, Sri Lanka'],['Currency Symbol','Shown before prices','text','LKR']];
-            foreach ($store_fields as $sf): ?>
-            <div class="sc-row">
-                <div class="sc-i"><strong><?= $sf[0] ?></strong><span><?= $sf[1] ?></span></div>
-                <input type="<?= $sf[2] ?>" class="f-input" value="<?= $sf[3] ?>">
-            </div>
+            foreach($store_fields as $sf): ?>
+            <div class="sc-row"><div class="sc-i"><strong><?= $sf[0] ?></strong><span><?= $sf[1] ?></span></div><input type="<?= $sf[2] ?>" class="f-input" value="<?= $sf[3] ?>"></div>
             <?php endforeach; ?>
         </div>
 
         <div class="sc">
             <div class="sc-hdr"><i class="fas fa-sliders"></i> Features & Visibility</div>
-            <?php $toggles=[
-                ['Maintenance Mode',          'Take the store offline for visitors',       false],
-                ['Show Out-of-Stock Products','Display items with stock_count = 0',         true],
-                ['WhatsApp Floating Button',  'Show chat button on public pages',           true],
-                ['Customer Reviews',          'Allow buyers to leave product reviews',      false],
-                ['Price Range Filter',        'Show min/max filter on products.php',        true],
-                ['Low Stock Badge (≤5)',      'Show "Only X left" badge on product cards',  true],
-                ['Discount % Badge',          'Show discount badge when orig > price',      true],
-            ];
-            foreach ($toggles as $t): ?>
-            <div class="sc-row">
-                <div class="sc-i"><strong><?= $t[0] ?></strong><span><?= $t[1] ?></span></div>
-                <label class="toggle"><input type="checkbox" <?= $t[2]?'checked':'' ?>><span class="tgl-sl"></span></label>
-            </div>
+            <?php $toggles=[['Maintenance Mode','Take the store offline for visitors',false],['Show Out-of-Stock Products','Display items with stock_count = 0',true],['WhatsApp Floating Button','Show chat button on public pages',true],['Customer Reviews','Allow buyers to leave product reviews',false],['Price Range Filter','Show min/max filter on products.php',true],['Low Stock Badge (≤5)','Show "Only X left" badge on product cards',true],['Discount % Badge','Show discount badge when orig > price',true]];
+            foreach($toggles as $t): ?>
+            <div class="sc-row"><div class="sc-i"><strong><?= $t[0] ?></strong><span><?= $t[1] ?></span></div><label class="toggle"><input type="checkbox" <?= $t[2]?'checked':'' ?>><span class="tgl-sl"></span></label></div>
             <?php endforeach; ?>
         </div>
 
         <div class="sc">
             <div class="sc-hdr"><i class="fas fa-users-gear"></i> Admin Accounts</div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>Logged-in Account</strong><span><?= htmlspecialchars($admin_email) ?></span></div>
-                <span class="role-chip superadmin"><i class="fas fa-shield-halved"></i> Super Admin</span>
-            </div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>New Password</strong><span>Leave blank to keep current</span></div>
-                <input type="password" class="f-input" placeholder="••••••••••">
-            </div>
+            <div class="sc-row"><div class="sc-i"><strong>Logged-in Account</strong><span><?= htmlspecialchars($admin_email) ?></span></div><span class="role-chip superadmin"><i class="fas fa-shield-halved"></i> Super Admin</span></div>
+            <div class="sc-row"><div class="sc-i"><strong>New Password</strong><span>Leave blank to keep current</span></div><input type="password" class="f-input" placeholder="••••••••••"></div>
         </div>
 
         <div class="sc">
             <div class="sc-hdr" style="color:#dc2626"><i class="fas fa-triangle-exclamation" style="color:#ef4444"></i> Danger Zone</div>
             <div class="sc-row">
                 <div class="sc-i"><strong style="color:#dc2626">Clear All Orders</strong><span>Permanently deletes every order record</span></div>
-                <form method="POST" onsubmit="return confirm('Delete ALL orders permanently?')">
-                    <input type="hidden" name="_action" value="clear_orders">
-                    <button type="submit" class="btn-p btn-red btn-sm"><i class="fas fa-trash"></i> Clear Orders</button>
-                </form>
+                <form method="POST" onsubmit="return confirm('Delete ALL orders permanently?')"><input type="hidden" name="_action" value="clear_orders"><button type="submit" class="btn-p btn-red btn-sm"><i class="fas fa-trash"></i> Clear Orders</button></form>
             </div>
         </div>
 
@@ -2442,7 +2536,7 @@ $icon_options = [
 </div>
 
 
-<!-- ══ ADD PRODUCT MODAL ══════════════════════════════════════════════ -->
+<!-- ══ ADD PRODUCT MODAL ══ PATCH: added Category 2 field ══ -->
 <div class="m-overlay" id="addProductModal">
     <div class="modal">
         <div class="m-hdr"><h3><i class="fas fa-plus" style="color:var(--accent);margin-right:6px"></i>Add New Product</h3><button class="m-close" onclick="closeModal('addProductModal')"><i class="fas fa-xmark"></i></button></div>
@@ -2461,14 +2555,32 @@ $icon_options = [
                     <div class="fg"><label>Product Name <span>*</span></label><input type="text" name="name" class="fc" required></div>
                     <div class="fg"><label>Brand</label><input type="text" name="brand" class="fc"></div>
                 </div>
-                <div class="fg">
-                    <label>Category <span>*</span></label>
-                    <?php if (empty($cat_map)): ?>
-                    <div style="background:#fef9c3;border:1px solid #fde047;border-radius:var(--r-md);padding:9px 11px;font-size:.82rem;color:#854d0e"><i class="fas fa-triangle-exclamation"></i> No categories. <a href="?page=categories" style="color:inherit;font-weight:800">Create first →</a></div>
-                    <input type="hidden" name="category" value="">
-                    <?php else: ?>
-                    <select name="category" class="fc" required><option value="">— Select —</option><?php foreach ($cat_map as $slug=>$info): ?><option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option><?php endforeach; ?></select>
-                    <?php endif; ?>
+                <!-- PATCH: Category 1 + Category 2 side by side -->
+                <div class="f-row">
+                    <div class="fg">
+                        <label>Category 1 <span>*</span></label>
+                        <?php if (empty($cat_map)): ?>
+                        <div style="background:#fef9c3;border:1px solid #fde047;border-radius:var(--r-md);padding:9px 11px;font-size:.82rem;color:#854d0e"><i class="fas fa-triangle-exclamation"></i> No categories. <a href="?page=categories" style="color:inherit;font-weight:800">Create first →</a></div>
+                        <input type="hidden" name="category" value="">
+                        <?php else: ?>
+                        <select name="category" class="fc" required>
+                            <option value="">— Select —</option>
+                            <?php foreach ($cat_map as $slug=>$info): ?>
+                            <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php endif; ?>
+                    </div>
+                    <div class="fg">
+                        <!-- PATCH: Category 2 field -->
+                        <label>Category 2 <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
+                        <select name="category2" class="fc">
+                            <option value="">— None —</option>
+                            <option value="limited_time_deals">Limited-Time Deals</option>
+                            <option value="best_selling_products">Best Selling Products</option>
+                        </select>
+                        <div class="f-hint">Assign a second category for cross-listing</div>
+                    </div>
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Price (LKR) <span>*</span></label><input type="number" name="price" class="fc" min="0" step="0.01" required></div>
@@ -2482,7 +2594,7 @@ $icon_options = [
     </div>
 </div>
 
-<!-- ══ EDIT PRODUCT MODAL ═══════════════════════════════════════════ -->
+<!-- ══ EDIT PRODUCT MODAL ══ PATCH: added Category 2 field ══ -->
 <div class="m-overlay" id="editProductModal">
     <div class="modal">
         <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Product</h3><button class="m-close" onclick="closeModal('editProductModal')"><i class="fas fa-xmark"></i></button></div>
@@ -2503,9 +2615,26 @@ $icon_options = [
                     <div class="fg"><label>Name <span>*</span></label><input type="text" name="name" id="editProdName" class="fc" required></div>
                     <div class="fg"><label>Brand</label><input type="text" name="brand" id="editProdBrand" class="fc"></div>
                 </div>
-                <div class="fg">
-                    <label>Category <span>*</span></label>
-                    <select name="category" id="editProdCategory" class="fc" required><option value="">— Select —</option><?php foreach ($cat_map as $slug=>$info): ?><option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option><?php endforeach; ?></select>
+                <!-- PATCH: Category 1 + Category 2 side by side -->
+                <div class="f-row">
+                    <div class="fg">
+                        <label>Category 1 <span>*</span></label>
+                        <select name="category" id="editProdCategory" class="fc" required>
+                            <option value="">— Select —</option>
+                            <?php foreach ($cat_map as $slug=>$info): ?>
+                            <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="fg">
+                        <!-- PATCH: Category 2 field -->
+                        <label>Category 2 <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
+                        <select name="category2" id="editProdCategory2" class="fc">
+                            <option value="">— None —</option>
+                            <option value="limited_time_deals">Limited-Time Deals</option>
+                            <option value="best_selling_products">Best Selling Products</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Price (LKR) <span>*</span></label><input type="number" name="price" id="editProdPrice" class="fc" min="0" step="0.01" required></div>
@@ -2676,25 +2805,13 @@ $icon_options = [
                     </div>
                     <div class="f-hint">Recommended: 1440×600px or wider, JPG/WebP</div>
                 </div>
-                <div class="fg">
-                    <label>Click Link URL</label>
-                    <input type="text" name="slide_link" class="fc" placeholder="https://… or products.php?category=laptops">
-                    <div class="f-hint">Where the image redirects when clicked</div>
-                </div>
+                <div class="fg"><label>Click Link URL</label><input type="text" name="slide_link" class="fc" placeholder="https://… or products.php?category=laptops"></div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="slide_order" class="fc" value="0" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" checked><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
-                    </div>
+                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" checked><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
                 </div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('addHeroSlideModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Slide</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addHeroSlideModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Slide</button></div>
         </form>
     </div>
 </div>
@@ -2716,25 +2833,13 @@ $icon_options = [
                         <div><input type="text" name="slide_image_url" id="editSlideImageUrl" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'editSlideImgPrevImg','editSlideImgPrev')"></div>
                     </div>
                 </div>
-                <div class="fg">
-                    <label>Click Link URL</label>
-                    <input type="text" name="slide_link" id="editSlideLink" class="fc" placeholder="https://… or products.php?category=laptops">
-                    <div class="f-hint">Where the image redirects when clicked</div>
-                </div>
+                <div class="fg"><label>Click Link URL</label><input type="text" name="slide_link" id="editSlideLink" class="fc"></div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="slide_order" id="editSlideOrder" class="fc" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" id="editSlideActive"><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
-                    </div>
+                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" id="editSlideActive"><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
                 </div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('editHeroSlideModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Slide</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editHeroSlideModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Slide</button></div>
         </form>
     </div>
 </div>
@@ -2753,26 +2858,17 @@ $icon_options = [
                         <div><input type="file" name="popup_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'addPopupImgPrevImg','addPopupImgPrev')"></div>
                         <div><input type="text" name="popup_image_url" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'addPopupImgPrevImg','addPopupImgPrev')"></div>
                     </div>
-                    <div class="f-hint">Recommended: 800×600px, JPG/PNG/WebP</div>
                 </div>
                 <div class="f-row">
-                    <div class="fg"><label>Alt Text</label><input type="text" name="popup_alt" class="fc" placeholder="Description of image"></div>
-                    <div class="fg"><label>Link URL</label><input type="text" name="popup_link" class="fc" placeholder="https://…"></div>
+                    <div class="fg"><label>Alt Text</label><input type="text" name="popup_alt" class="fc"></div>
+                    <div class="fg"><label>Link URL</label><input type="text" name="popup_link" class="fc"></div>
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="popup_order" class="fc" value="0" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" checked><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
-                    </div>
+                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" checked><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
                 </div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('addPopupImageModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Image</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addPopupImageModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Image</button></div>
         </form>
     </div>
 </div>
@@ -2800,26 +2896,15 @@ $icon_options = [
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="popup_order" id="editPopupOrder" class="fc" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" id="editPopupActive"><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
-                    </div>
+                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" id="editPopupActive"><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
                 </div>
             </div>
-            <div class="m-foot">
-                <button type="button" class="btn-o" onclick="closeModal('editPopupImageModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Image</button>
-            </div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editPopupImageModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Image</button></div>
         </form>
     </div>
 </div>
 
 
-<!-- ══════════════════════════════════════════════════════════════════
-     JAVASCRIPT
-══════════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Modal helpers ─────────────────────────────────────────────────────────────
 function openModal(id)  { document.getElementById(id).classList.add('open');    document.body.style.overflow='hidden'; }
@@ -2834,248 +2919,394 @@ document.addEventListener('keydown', e => {
     }
 });
 
-// ── Image preview helpers ─────────────────────────────────────────────────────
+// ── Image preview helpers (Add Product) ──────────────────────────────────────
 function prvFile(input) {
-    if (!input.files[0]) return;
-    const r = new FileReader();
-    r.onload = e => showPrv('imgPrevImg','imgPrev', e.target.result);
-    r.readAsDataURL(input.files[0]);
-}
-function prvUrl(url) {
-    if (url) showPrv('imgPrevImg','imgPrev', '../' + url);
-    else     hidePrv('imgPrevImg','imgPrev');
-}
-function prvFileEdit(input) {
-    if (!input.files[0]) return;
-    const r = new FileReader();
-    r.onload = e => showPrv('editImgPrevImg','editImgPrev', e.target.result);
-    r.readAsDataURL(input.files[0]);
-}
-function prvUrlEdit(url) {
-    if (url) showPrv('editImgPrevImg','editImgPrev', '../' + url);
-    else {
-        const existing = document.getElementById('editProdExistingImage').value;
-        if (existing) showPrv('editImgPrevImg','editImgPrev', '../' + existing);
-        else hidePrv('editImgPrevImg','editImgPrev');
-    }
-}
-function adPrvFile(input, imgId, wrapId) {
-    if (!input.files[0]) return;
-    const r = new FileReader();
-    r.onload = e => showPrv(imgId, wrapId, e.target.result);
-    r.readAsDataURL(input.files[0]);
-}
-function adPrvUrl(url, imgId, wrapId) {
-    if (url) showPrv(imgId, wrapId, '../' + url);
-    else     hidePrv(imgId, wrapId);
-}
-function showPrv(imgId, wrapId, src) {
-    const img  = document.getElementById(imgId);
-    const wrap = document.getElementById(wrapId);
-    if (!img || !wrap) return;
-    img.src = src;
-    img.style.display = 'block';
-    const ph = wrap.querySelector('.iph');
-    if (ph) ph.style.display = 'none';
-}
-function hidePrv(imgId, wrapId) {
-    const img  = document.getElementById(imgId);
-    const wrap = document.getElementById(wrapId);
-    if (!img || !wrap) return;
-    img.style.display = 'none';
-    const ph = wrap.querySelector('.iph');
-    if (ph) ph.style.display = '';
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = document.getElementById('imgPrevImg');
+        const ph  = document.querySelector('#imgPrev .iph');
+        img.src = e.target.result;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
 }
 
-// ── Edit Product Modal ────────────────────────────────────────────────────────
-function openEditProduct(d) {
-    document.getElementById('editProdId').value          = d.id;
-    document.getElementById('editProdName').value        = d.name;
-    document.getElementById('editProdBrand').value       = d.brand || '';
-    document.getElementById('editProdCategory').value    = d.category;
-    document.getElementById('editProdPrice').value       = d.price;
-    document.getElementById('editProdOrigPrice').value   = d.original_price || '';
-    document.getElementById('editProdStock').value       = d.stock_count;
-    document.getElementById('editProdSpecs').value       = d.specs || '';
-    document.getElementById('editProdExistingImage').value = d.image || '';
-    document.getElementById('editProdImageUrl').value    = d.image || '';
-    if (d.image) showPrv('editImgPrevImg', 'editImgPrev', '../' + d.image);
-    else hidePrv('editImgPrevImg', 'editImgPrev');
+function prvUrl(val) {
+    const img = document.getElementById('imgPrevImg');
+    const ph  = document.querySelector('#imgPrev .iph');
+    if (val) {
+        img.src = val;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        if (ph) ph.style.display = '';
+    }
+}
+
+// ── Image preview helpers (Edit Product) ─────────────────────────────────────
+function prvFileEdit(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = document.getElementById('editImgPrevImg');
+        const ph  = document.getElementById('editImgPh');
+        img.src = e.target.result;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+}
+
+function prvUrlEdit(val) {
+    const img = document.getElementById('editImgPrevImg');
+    const ph  = document.getElementById('editImgPh');
+    if (val) {
+        img.src = val;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        if (ph) ph.style.display = '';
+    }
+}
+
+// ── Generic image preview (hero slides / popup images) ────────────────────────
+function adPrvFile(input, imgId, wrapId) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img  = document.getElementById(imgId);
+        const wrap = document.getElementById(wrapId);
+        img.src = e.target.result;
+        img.style.display = 'block';
+        const ph = wrap ? wrap.querySelector('.iph') : null;
+        if (ph) ph.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+}
+
+function adPrvUrl(val, imgId, wrapId) {
+    const img  = document.getElementById(imgId);
+    const wrap = document.getElementById(wrapId);
+    const ph   = wrap ? wrap.querySelector('.iph') : null;
+    if (val) {
+        img.src = val;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        if (ph) ph.style.display = '';
+    }
+}
+
+// ── Open Edit Product modal ───────────────────────────────────────────────────
+function openEditProduct(data) {
+    document.getElementById('editProdId').value           = data.id;
+    document.getElementById('editProdName').value         = data.name        || '';
+    document.getElementById('editProdBrand').value        = data.brand       || '';
+    document.getElementById('editProdCategory').value     = data.category    || '';
+    document.getElementById('editProdCategory2').value    = data.category2   || '';
+    document.getElementById('editProdPrice').value        = data.price       || '';
+    document.getElementById('editProdOrigPrice').value    = data.original_price || '';
+    document.getElementById('editProdStock').value        = data.stock_count != null ? data.stock_count : 0;
+    document.getElementById('editProdSpecs').value        = data.specs       || '';
+    document.getElementById('editProdExistingImage').value= data.image       || '';
+
+    // Image preview
+    const img = document.getElementById('editImgPrevImg');
+    const ph  = document.getElementById('editImgPh');
+    const url = document.getElementById('editProdImageUrl');
+    url.value = data.image || '';
+    if (data.image) {
+        img.src = '../' + data.image;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        if (ph) ph.style.display = '';
+    }
+
     openModal('editProductModal');
 }
 
-// ── Category helpers ──────────────────────────────────────────────────────────
-function slugify(text) {
-    return text.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-}
-function autoSlug(nameInput, slugId) {
-    document.getElementById(slugId).value = slugify(nameInput.value);
-}
-function selectIcon(prefix, icon) {
-    document.getElementById(prefix + 'CatIcon').value = icon;
-    document.querySelectorAll('#' + prefix + 'IconGrid .icon-opt').forEach(el => el.classList.remove('selected'));
-    const chosen = document.querySelector('#' + prefix + 'IconGrid [title="' + icon + '"]');
-    if (chosen) chosen.classList.add('selected');
-    updateIconPreview(prefix);
-}
-function updateIconPreview(prefix) {
-    const val = document.getElementById(prefix + 'CatIcon').value || 'fa-tag';
-    const el  = document.getElementById(prefix + 'IconPreviewI');
-    if (el) { el.className = 'fas ' + val; }
-}
-function openEditCat(d) {
-    document.getElementById('editCatId').value   = d.id;
-    document.getElementById('editCatName').value = d.name;
-    document.getElementById('editCatSlug').value = d.slug;
-    document.getElementById('editOldSlug').value = d.slug;
-    document.getElementById('editCatDesc').value = d.desc || '';
-    document.getElementById('editCatIcon').value = d.icon || 'fa-tag';
-    updateIconPreview('edit');
+// ── Open Edit Category modal ──────────────────────────────────────────────────
+function openEditCat(data) {
+    document.getElementById('editCatId').value   = data.id;
+    document.getElementById('editCatName').value = data.name  || '';
+    document.getElementById('editCatSlug').value = data.slug  || '';
+    document.getElementById('editCatDesc').value = data.desc  || '';
+    document.getElementById('editCatIcon').value = data.icon  || 'fa-tag';
+    document.getElementById('editOldSlug').value = data.slug  || '';
+
+    // Icon preview
+    const ico = data.icon || 'fa-tag';
+    const previewI = document.getElementById('editIconPreviewI');
+    previewI.className = 'fas ' + ico;
+
+    // Highlight selected icon in grid
     document.querySelectorAll('#editIconGrid .icon-opt').forEach(el => {
-        el.classList.toggle('selected', el.title === (d.icon || 'fa-tag'));
+        el.classList.toggle('selected', el.title === ico);
     });
+
     openModal('editCatModal');
 }
-function openDeleteCat(d) {
-    document.getElementById('delCatId').value   = d.id;
-    document.getElementById('delCatSlug').value = d.slug;
-    const msg  = document.getElementById('delCatMsg');
-    const wrap = document.getElementById('delReassignWrap');
-    if (d.cnt > 0) {
-        msg.innerHTML  = '<i class="fas fa-triangle-exclamation" style="color:#f59e0b;margin-right:5px"></i>'
-            + 'Category <strong>' + d.name + '</strong> has <strong>' + d.cnt + '</strong> product(s). '
-            + 'Choose where to move them:';
-        wrap.style.display = '';
-        document.querySelectorAll('#delReassignWrap select option').forEach(opt => {
-            opt.style.display = (opt.value === d.slug) ? 'none' : '';
-        });
+
+// ── Open Delete Category modal ────────────────────────────────────────────────
+function openDeleteCat(data) {
+    document.getElementById('delCatId').value   = data.id;
+    document.getElementById('delCatSlug').value = data.slug || '';
+
+    const msg = document.getElementById('delCatMsg');
+    if (data.cnt > 0) {
+        msg.innerHTML = '<i class="fas fa-triangle-exclamation" style="color:#f59e0b;margin-right:5px"></i>'
+            + 'Category <strong>' + data.name + '</strong> has <strong>' + data.cnt + ' product(s)</strong> assigned to it. '
+            + 'Choose what to do with them below.';
+        document.getElementById('delReassignWrap').style.display = '';
     } else {
-        msg.innerHTML  = 'Delete category <strong>' + d.name + '</strong>? This action cannot be undone.';
-        wrap.style.display = 'none';
+        msg.innerHTML = 'Are you sure you want to delete <strong>' + data.name + '</strong>? This cannot be undone.';
+        document.getElementById('delReassignWrap').style.display = 'none';
     }
+
     openModal('deleteCatModal');
 }
 
-// ── Ticker helpers ────────────────────────────────────────────────────────────
-function openEditTicker(d) {
-    document.getElementById('editTickerId').value       = d.id;
-    document.getElementById('editTickerMessage').value  = d.message;
-    document.getElementById('editTickerLinkUrl').value  = d.link_url  || '';
-    document.getElementById('editTickerLinkText').value = d.link_text || '';
-    document.getElementById('editTickerEmoji').value    = d.emoji     || '';
-    document.getElementById('editTickerOrder').value    = d.sort_order || 0;
-    document.getElementById('editTickerActive').checked = !!d.is_active;
+// ── Open Edit Ticker modal ────────────────────────────────────────────────────
+function openEditTicker(data) {
+    document.getElementById('editTickerId').value        = data.id;
+    document.getElementById('editTickerEmoji').value     = data.emoji     || '';
+    document.getElementById('editTickerMessage').value   = data.message   || '';
+    document.getElementById('editTickerLinkUrl').value   = data.link_url  || '';
+    document.getElementById('editTickerLinkText').value  = data.link_text || '';
+    document.getElementById('editTickerOrder').value     = data.sort_order != null ? data.sort_order : 0;
+    document.getElementById('editTickerActive').checked  = !!data.is_active;
     openModal('editTickerModal');
 }
-function updateTickerPreviewColor(color) {
-    const bars = document.querySelectorAll('#livePreviewBar, #dashTickerBar');
-    bars.forEach(b => { if (b) b.style.background = color; });
-}
 
-// ── Hero Slide helpers ────────────────────────────────────────────────────────
-function openEditHeroSlide(d) {
-    document.getElementById('editSlideId').value             = d.id;
-    document.getElementById('editSlideLink').value           = d.link_url      || '';
-    document.getElementById('editSlideOrder').value          = d.sort_order    || 0;
-    document.getElementById('editSlideActive').checked       = !!d.is_active;
-    document.getElementById('editSlideExistingImage').value  = d.image_url     || '';
-    document.getElementById('editSlideImageUrl').value       = d.image_url     || '';
-    if (d.image_url) showPrv('editSlideImgPrevImg', 'editSlideImgPrev', '../' + d.image_url);
-    else hidePrv('editSlideImgPrevImg', 'editSlideImgPrev');
+// ── Open Edit Hero Slide modal ────────────────────────────────────────────────
+function openEditHeroSlide(data) {
+    document.getElementById('editSlideId').value            = data.id;
+    document.getElementById('editSlideLink').value          = data.link_url   || '';
+    document.getElementById('editSlideOrder').value         = data.sort_order != null ? data.sort_order : 0;
+    document.getElementById('editSlideActive').checked      = !!data.is_active;
+    document.getElementById('editSlideExistingImage').value = data.image_url  || '';
+
+    const url = document.getElementById('editSlideImageUrl');
+    url.value = data.image_url || '';
+
+    const img = document.getElementById('editSlideImgPrevImg');
+    const ph  = document.getElementById('editSlideImgPh');
+    if (data.image_url) {
+        img.src = '../' + data.image_url;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        if (ph) ph.style.display = '';
+    }
+
     openModal('editHeroSlideModal');
 }
 
-// ── Popup Image helpers ───────────────────────────────────────────────────────
-function openEditPopupImage(d) {
-    document.getElementById('editPopupId').value             = d.id;
-    document.getElementById('editPopupAlt').value            = d.alt_text   || '';
-    document.getElementById('editPopupLink').value           = d.link_url   || '';
-    document.getElementById('editPopupOrder').value          = d.sort_order || 0;
-    document.getElementById('editPopupActive').checked       = !!d.is_active;
-    document.getElementById('editPopupExistingImage').value  = d.image_src  || '';
-    document.getElementById('editPopupImageUrl').value       = d.image_src  || '';
-    if (d.image_src) showPrv('editPopupImgPrevImg', 'editPopupImgPrev', '../' + d.image_src);
-    else hidePrv('editPopupImgPrevImg', 'editPopupImgPrev');
+// ── Open Edit Popup Image modal ───────────────────────────────────────────────
+function openEditPopupImage(data) {
+    document.getElementById('editPopupId').value            = data.id;
+    document.getElementById('editPopupAlt').value           = data.alt_text  || '';
+    document.getElementById('editPopupLink').value          = data.link_url  || '';
+    document.getElementById('editPopupOrder').value         = data.sort_order != null ? data.sort_order : 0;
+    document.getElementById('editPopupActive').checked      = !!data.is_active;
+    document.getElementById('editPopupExistingImage').value = data.image_src || '';
+
+    const url = document.getElementById('editPopupImageUrl');
+    url.value = data.image_src || '';
+
+    const img = document.getElementById('editPopupImgPrevImg');
+    const ph  = document.getElementById('editPopupImgPh');
+    if (data.image_src) {
+        img.src = '../' + data.image_src;
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        if (ph) ph.style.display = '';
+    }
+
     openModal('editPopupImageModal');
 }
 
-// ── Global search filter ──────────────────────────────────────────────────────
-document.getElementById('gSearch')?.addEventListener('input', function() {
-    const q = this.value.toLowerCase();
-    document.querySelectorAll('tbody tr').forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-    });
+// ── Ticker preview colour update ──────────────────────────────────────────────
+function updateTickerPreviewColor(color) {
+    const bar1 = document.getElementById('livePreviewBar');
+    const bar2 = document.getElementById('dashTickerBar');
+    if (bar1) bar1.style.background = color;
+    if (bar2) bar2.style.background = color;
+}
+
+// ── Auto-slug from category name ──────────────────────────────────────────────
+function autoSlug(nameInput, slugId) {
+    const slugField = document.getElementById(slugId);
+    if (!slugField) return;
+    // Only auto-fill if user hasn't manually edited it
+    if (slugField.dataset.manual === 'true') return;
+    slugField.value = nameInput.value
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const slugField = document.getElementById('addCatSlug');
+    if (slugField) {
+        slugField.addEventListener('input', function() {
+            this.dataset.manual = 'true';
+        });
+    }
 });
 
-// Per-table search
-function bindSearch(inputId, tableId) {
+// ── Icon picker ───────────────────────────────────────────────────────────────
+function selectIcon(mode, ico) {
+    const inputId   = mode === 'add' ? 'addCatIcon'      : 'editCatIcon';
+    const gridId    = mode === 'add' ? 'addIconGrid'      : 'editIconGrid';
+    const previewId = mode === 'add' ? 'addIconPreviewI'  : 'editIconPreviewI';
+
+    document.getElementById(inputId).value = ico;
+    document.getElementById(previewId).className = 'fas ' + ico;
+
+    document.querySelectorAll('#' + gridId + ' .icon-opt').forEach(el => {
+        el.classList.toggle('selected', el.title === ico);
+    });
+}
+
+function updateIconPreview(mode) {
+    const inputId   = mode === 'add' ? 'addCatIcon'     : 'editCatIcon';
+    const previewId = mode === 'add' ? 'addIconPreviewI': 'editIconPreviewI';
+    const val = document.getElementById(inputId).value.trim();
+    if (val) document.getElementById(previewId).className = 'fas ' + val;
+}
+
+// ── Table search (product / order / customer / category / ticker) ─────────────
+function wireSearch(inputId, tableId) {
     const input = document.getElementById(inputId);
-    if (!input) return;
+    const table = document.getElementById(tableId);
+    if (!input || !table) return;
     input.addEventListener('input', function() {
         const q = this.value.toLowerCase();
-        document.querySelectorAll('#' + tableId + ' tbody tr').forEach(row => {
+        table.querySelectorAll('tbody tr').forEach(row => {
             row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
         });
     });
 }
-bindSearch('prodSearch',   'prodTable');
-bindSearch('orderSearch',  'orderTable');
-bindSearch('custSearch',   'custTable');
-bindSearch('catSearch',    'catTable');
-bindSearch('tickerSearch', 'tickerTable');
 
-// ── Category tab filter (products page) ──────────────────────────────────────
-document.querySelectorAll('#catTabs .ftab').forEach(tab => {
-    tab.addEventListener('click', function(e) {
+wireSearch('prodSearch',   'prodTable');
+wireSearch('orderSearch',  'orderTable');
+wireSearch('custSearch',   'custTable');
+wireSearch('catSearch',    'catTable');
+wireSearch('tickerSearch', 'tickerTable');
+
+// ── Global topbar search ──────────────────────────────────────────────────────
+const gSearch = document.getElementById('gSearch');
+if (gSearch) {
+    gSearch.addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        document.querySelectorAll('table tbody tr').forEach(row => {
+            row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
+        });
+    });
+}
+
+// ── Category filter tabs (Products page) ──────────────────────────────────────
+const catTabs = document.getElementById('catTabs');
+if (catTabs) {
+    catTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.ftab');
+        if (!tab) return;
         e.preventDefault();
-        document.querySelectorAll('#catTabs .ftab').forEach(t => t.classList.remove('active'));
-        this.classList.add('active');
-        const cat = this.dataset.cat;
+        catTabs.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const cat = tab.dataset.cat;
         document.querySelectorAll('#prodTable tbody tr').forEach(row => {
             row.style.display = (cat === 'all' || row.dataset.cat === cat) ? '' : 'none';
         });
     });
-});
+}
 
-// ── Order status filter ───────────────────────────────────────────────────────
-document.querySelectorAll('#orderTabs .ftab').forEach(tab => {
-    tab.addEventListener('click', function(e) {
+// ── Order status filter tabs ──────────────────────────────────────────────────
+const orderTabs = document.getElementById('orderTabs');
+if (orderTabs) {
+    orderTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.ftab');
+        if (!tab) return;
         e.preventDefault();
-        document.querySelectorAll('#orderTabs .ftab').forEach(t => t.classList.remove('active'));
-        this.classList.add('active');
-        const filter = this.dataset.filter;
+        orderTabs.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const filter = tab.dataset.filter;
         document.querySelectorAll('#orderTable tbody tr').forEach(row => {
             row.style.display = (filter === 'all' || row.dataset.status === filter) ? '' : 'none';
         });
     });
-});
+}
 
-// ── CSV Export ────────────────────────────────────────────────────────────────
+// ── CSV export ────────────────────────────────────────────────────────────────
 function exportTable(tableId) {
     const table = document.getElementById(tableId);
     if (!table) return;
-    let csv = [];
-    table.querySelectorAll('tr').forEach(row => {
-        const cells = [...row.querySelectorAll('th,td')].map(cell => '"' + cell.innerText.replace(/"/g, '""').trim() + '"');
-        csv.push(cells.join(','));
+
+    const rows = [];
+    // Headers
+    const headers = [];
+    table.querySelectorAll('thead th').forEach(th => {
+        headers.push('"' + th.innerText.replace(/"/g, '""') + '"');
     });
-    const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = tableId + '_' + new Date().toISOString().slice(0,10) + '.csv';
-    a.click();
+    rows.push(headers.join(','));
+
+    // Body rows (only visible ones)
+    table.querySelectorAll('tbody tr').forEach(tr => {
+        if (tr.style.display === 'none') return;
+        const cells = [];
+        tr.querySelectorAll('td').forEach(td => {
+            // Get text content, strip extra whitespace
+            let text = td.innerText.replace(/\s+/g, ' ').trim();
+            cells.push('"' + text.replace(/"/g, '""') + '"');
+        });
+        rows.push(cells.join(','));
+    });
+
+    const csv     = rows.join('\n');
+    const blob    = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url     = URL.createObjectURL(blob);
+    const link    = document.createElement('a');
+    const ts      = new Date().toISOString().slice(0,10);
+    link.href     = url;
+    link.download = tableId + '_' + ts + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
-// ── Auto-dismiss flash messages ───────────────────────────────────────────────
-const flashEl = document.querySelector('.flash');
-if (flashEl) {
-    setTimeout(() => {
-        flashEl.style.transition = 'opacity .5s';
-        flashEl.style.opacity    = '0';
-        setTimeout(() => flashEl.remove(), 500);
-    }, 4500);
-}
+// ── Auto-dismiss flash messages after 4 seconds ───────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+    const flash = document.querySelector('.flash');
+    if (flash) {
+        setTimeout(() => {
+            flash.style.transition = 'opacity .5s ease';
+            flash.style.opacity    = '0';
+            setTimeout(() => flash.remove(), 500);
+        }, 4000);
+    }
+});
+
+// ── Highlight active bar chart bar on hover ───────────────────────────────────
+document.querySelectorAll('.bar').forEach(bar => {
+    bar.addEventListener('mouseenter', function() { this.classList.add('hi'); });
+    bar.addEventListener('mouseleave', function() { this.classList.remove('hi'); });
+});
 </script>
-
 </body>
 </html>

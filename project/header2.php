@@ -234,31 +234,21 @@ $cur_search = $_GET['search'] ?? '';
         }
         .nav-search-btn:hover { background: var(--accent-dark); transform: scale(1.05); }
 
-        /* ── CTA (login / sign up) ── */
-        .btn-cta {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            background: var(--accent);
-            color: #fff !important;
+        /* ── Text links (login / sign up) ── */
+        .btn-text-link {
             font-family: 'Red Hat Display', sans-serif;
-            font-size: .855rem;
-            font-weight: 700;
-            padding: 9px 20px;
-            border-radius: var(--r-md);
-            border: none;
-            cursor: pointer;
+            font-size: .875rem;
+            font-weight: 600;
+            color: var(--ink-2);
             text-decoration: none;
-            box-shadow: 0 3px 12px rgba(70, 229, 78, 0.32);
-            transition: background .2s, transform .2s, box-shadow .2s;
+            padding: 6px 4px;
+            border-radius: var(--r-sm);
+            transition: color .15s;
+            white-space: nowrap;
         }
-        .btn-cta:hover {
-            background: var(--accent-dark);
-            transform: translateY(-1px);
-            box-shadow: 0 6px 20px rgba(70, 229, 91, 0.42);
-            color: #fff !important;
-            text-decoration: none;
-        }
+        .btn-text-link:hover { color: var(--accent); }
+        .btn-text-link--accent { color: var(--accent); font-weight: 700; }
+        .btn-text-link--accent:hover { color: var(--accent-dark); }
 
         /* ── account button ── */
         .btn-account {
@@ -448,9 +438,9 @@ $cur_search = $_GET['search'] ?? '';
                         </ul>
                     </div>
                 <?php else: ?>
-                    <a href="login.php" class="btn-cta">
-                        <i class="fas fa-sign-in-alt" style="font-size:.78rem"></i> Login / Sign Up
-                    </a>
+                    <a href="login.php" class="btn-text-link">LoginSign Up</a>
+                    <div class="v-sep"></div>
+                    <a href="register.php" class="btn-text-link btn-text-link--accent">Sign Up</a>
                 <?php endif; ?>
 
             </div>

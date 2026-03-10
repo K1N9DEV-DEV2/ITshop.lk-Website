@@ -200,10 +200,12 @@ include 'popup.php';
     /* ── CATEGORIES ───────────────────────────────────── */
     .categories-section { padding:6rem 0; background:var(--surface); }
     .cats-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:16px; max-width:1300px; margin:0 auto; padding:0 2rem; }
-    .cat-card { position:relative; border-radius:20px; overflow:hidden; text-decoration:none; color:#fff; aspect-ratio:3/4; display:flex; flex-direction:column; justify-content:flex-end; padding:1.25rem; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%); opacity:0; transform:translateY(20px); box-shadow:0 4px 20px rgba(0,0,0,.2); cursor:pointer; transition:opacity .55s ease,transform .55s ease,box-shadow .3s ease; }
+    .cat-card { position:relative; border-radius:20px; overflow:hidden; text-decoration:none; color:#fff; aspect-ratio:3/4; display:flex; flex-direction:column; justify-content:flex-end; padding:1.25rem; background-color:#1a1a2e; background-size:cover; background-position:center; opacity:0; transform:translateY(20px); box-shadow:0 4px 20px rgba(0,0,0,.2); cursor:pointer; transition:opacity .55s ease,transform .55s ease,box-shadow .3s ease; }
     .cat-card.visible { opacity:1; transform:translateY(0); }
     .cat-card:hover { transform:translateY(-6px) scale(1.02); box-shadow:0 20px 50px rgba(0,0,0,.35); text-decoration:none; color:#fff; }
-    .cat-card::after { content:''; position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.1) 60%,transparent 100%); z-index:1; }
+    .cat-card .cat-bg-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; transition:transform .5s ease; }
+    .cat-card:hover .cat-bg-img { transform:scale(1.08); }
+    .cat-card::after { content:''; position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.35) 55%,rgba(0,0,0,.1) 100%); z-index:1; }
     .cat-icon-wrap { position:absolute; top:1.2rem; left:1.2rem; z-index:2; width:44px; height:44px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.15); backdrop-filter:blur(6px); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:1.15rem; transition:background .3s ease,transform .3s ease; }
     .cat-card:hover .cat-icon-wrap { background:var(--accent); border-color:var(--accent); transform:scale(1.1); }
     .cat-card-content-inner { position:relative; z-index:2; }
@@ -325,15 +327,62 @@ include 'popup.php';
     <div class="cats-grid">
         <?php
         $categories = [
-            ['icon'=>'fa-laptop',    'title'=>'Laptops & Notebooks','desc'=>'High-performance laptops for gaming, business & everyday use.',   'url'=>'products.php?category=laptops'],
-            ['icon'=>'fa-desktop',   'title'=>'Desktop PCs',         'desc'=>'Custom-built desktops and workstations for maximum performance.', 'url'=>'products.php?category=desktops'],
-            ['icon'=>'fa-memory',    'title'=>'RAM & Storage',        'desc'=>'High-speed memory modules and storage solutions.',               'url'=>'products.php?category=memory'],
-            ['icon'=>'fa-tv',        'title'=>'Graphics Cards',       'desc'=>'Latest VGA cards for gaming and professional work.',             'url'=>'products.php?category=graphics'],
-            ['icon'=>'fa-keyboard',  'title'=>'Keyboards & Mice',    'desc'=>'Premium input devices for gaming and productivity.',              'url'=>'products.php?category=peripherals'],
-            ['icon'=>'fa-headphones','title'=>'Audio Devices',        'desc'=>'High-quality headphones, speakers and audio equipment.',         'url'=>'products.php?category=audio'],
+            [
+                'icon'  => 'fa-laptop',
+                'title' => 'Laptops & Notebooks',
+                'desc'  => 'High-performance laptops for gaming, business & everyday use.',
+                'url'   => 'products.php?category=laptops',
+                'img'   => 'assets/categories/laptops.jpg',
+                'color' => '#0d1b2a',
+            ],
+            [
+                'icon'  => 'fa-desktop',
+                'title' => 'Desktop PCs',
+                'desc'  => 'Custom-built desktops and workstations for maximum performance.',
+                'url'   => 'products.php?category=desktops',
+                'img'   => 'assets/categories/desktops.jpg',
+                'color' => '#0a1628',
+            ],
+            [
+                'icon'  => 'fa-memory',
+                'title' => 'RAM & Storage',
+                'desc'  => 'High-speed memory modules and storage solutions.',
+                'url'   => 'products.php?category=memory',
+                'img'   => 'assets/categories/memory.jpg',
+                'color' => '#0d1a0d',
+            ],
+            [
+                'icon'  => 'fa-tv',
+                'title' => 'Graphics Cards',
+                'desc'  => 'Latest VGA cards for gaming and professional work.',
+                'url'   => 'products.php?category=graphics',
+                'img'   => 'assets/categories/graphics.jpg',
+                'color' => '#1a0d28',
+            ],
+            [
+                'icon'  => 'fa-keyboard',
+                'title' => 'Keyboards & Mice',
+                'desc'  => 'Premium input devices for gaming and productivity.',
+                'url'   => 'products.php?category=peripherals',
+                'img'   => 'assets/categories/peripherals.jpg',
+                'color' => '#1a1200',
+            ],
+            [
+                'icon'  => 'fa-headphones',
+                'title' => 'Audio Devices',
+                'desc'  => 'High-quality headphones, speakers and audio equipment.',
+                'url'   => 'products.php?category=audio',
+                'img'   => 'assets/categories/audio.jpg',
+                'color' => '#0d1a1a',
+            ],
         ];
         foreach ($categories as $i => $cat): ?>
-        <a href="<?= $cat['url'] ?>" class="cat-card" style="transition-delay:<?= $i * 70 ?>ms">
+        <a href="<?= $cat['url'] ?>" class="cat-card" style="transition-delay:<?= $i * 70 ?>ms;background-color:<?= $cat['color'] ?>">
+            <img class="cat-bg-img"
+                 src="<?= htmlspecialchars($cat['img']) ?>"
+                 alt="<?= htmlspecialchars($cat['title']) ?>"
+                 loading="lazy"
+                 onerror="this.style.display='none'">
             <div class="cat-icon-wrap"><i class="fas <?= $cat['icon'] ?>"></i></div>
             <div class="cat-card-content-inner">
                 <div class="cat-title"><?= $cat['title'] ?></div>

@@ -4,8 +4,8 @@ session_start();
 include 'db.php';
 
 // ─── Google OAuth Config ───────────────────────────────────────────────────
-define('GOOGLE_CLIENT_ID',     '989451968033-djkru087qagq8rhrhf43llm89cv0bsli.apps.googleusercontent.com');
-define('GOOGLE_CLIENT_SECRET', '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');
+define('GOOGLE_CLIENT_ID',     '403363992677-op7cqif2i6cieb7nn675ep40560odkhr.apps.googleusercontent.com');
+define('GOOGLE_CLIENT_SECRET', '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');
 define('GOOGLE_REDIRECT_URI',  'https://itshop.lk/google_auth.php');
 
 

@@ -65,6 +65,11 @@ if ($pdo) {
         $pdo->exec("UPDATE categories SET slug = LOWER(REPLACE(REPLACE(name,' ','_'),'&','')) WHERE slug = '' OR slug IS NULL");
     } catch (PDOException $e) { /* silently skip */ }
 
+    // ── Ensure products has second_category column ────────────────────────────
+    try {
+        $pdo->exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS second_category VARCHAR(50) NOT NULL DEFAULT ''");
+    } catch (PDOException $e) { /* silently skip */ }
+
     // ── Ensure ticker table exists ────────────────────────────────────────────
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS ticker_items (
@@ -137,7 +142,7 @@ foreach ($db_categories as $cat) {
 
 // ── Live DB queries ───────────────────────────────────────────────────────────
 $db_products = dbq(
-    "SELECT p.id, p.name, p.category, p.price, p.original_price,
+    "SELECT p.id, p.name, p.category, p.second_category, p.price, p.original_price,
             p.image, p.brand, p.stock_count,
             CASE WHEN p.stock_count > 0 THEN 1 ELSE 0 END as in_stock,
             GROUP_CONCAT(ps.spec_name SEPARATOR '\n') as specs
@@ -309,13 +314,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
     // ── ADD PRODUCT ───────────────────────────────────────────────────────────
     if ($act === 'add_product') {
-        $name     = trim($_POST['name'] ?? '');
-        $brand    = trim($_POST['brand'] ?? '');
-        $category = trim($_POST['category'] ?? '');
-        $price    = floatval($_POST['price'] ?? 0);
-        $orig     = floatval($_POST['original_price'] ?? 0);
-        $stock    = intval($_POST['stock_count'] ?? 0);
-        $image    = trim($_POST['image_url'] ?? '');
+        $name       = trim($_POST['name'] ?? '');
+        $brand      = trim($_POST['brand'] ?? '');
+        $category   = trim($_POST['category'] ?? '');
+        $second_cat = trim($_POST['second_category'] ?? '');
+        $price      = floatval($_POST['price'] ?? 0);
+        $orig       = floatval($_POST['original_price'] ?? 0);
+        $stock      = intval($_POST['stock_count'] ?? 0);
+        $image      = trim($_POST['image_url'] ?? '');
         if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
@@ -327,8 +333,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
         if ($name && $category && $price > 0) {
             try {
-                $pdo->prepare("INSERT INTO products (name, brand, category, price, original_price, stock_count, image) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                    ->execute([$name, $brand, $category, $price, $orig ?: $price, $stock, $image]);
+                $pdo->prepare("INSERT INTO products (name, brand, category, second_category, price, original_price, stock_count, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$name, $brand, $category, $second_cat, $price, $orig ?: $price, $stock, $image]);
                 $new_id = $pdo->lastInsertId();
                 $specs_raw = trim($_POST['specs'] ?? '');
                 if ($specs_raw && $new_id) {
@@ -349,14 +355,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
     // ── EDIT PRODUCT ──────────────────────────────────────────────────────────
     if ($act === 'edit_product') {
-        $pid      = intval($_POST['product_id'] ?? 0);
-        $name     = trim($_POST['name'] ?? '');
-        $brand    = trim($_POST['brand'] ?? '');
-        $category = trim($_POST['category'] ?? '');
-        $price    = floatval($_POST['price'] ?? 0);
-        $orig     = floatval($_POST['original_price'] ?? 0);
-        $stock    = intval($_POST['stock_count'] ?? 0);
-        $image    = trim($_POST['image_url'] ?? '');
+        $pid        = intval($_POST['product_id'] ?? 0);
+        $name       = trim($_POST['name'] ?? '');
+        $brand      = trim($_POST['brand'] ?? '');
+        $category   = trim($_POST['category'] ?? '');
+        $second_cat = trim($_POST['second_category'] ?? '');
+        $price      = floatval($_POST['price'] ?? 0);
+        $orig       = floatval($_POST['original_price'] ?? 0);
+        $stock      = intval($_POST['stock_count'] ?? 0);
+        $image      = trim($_POST['image_url'] ?? '');
         if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
@@ -369,8 +376,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         if (!$image) $image = trim($_POST['existing_image'] ?? '');
         if ($pid && $name && $category && $price > 0) {
             try {
-                $pdo->prepare("UPDATE products SET name=?, brand=?, category=?, price=?, original_price=?, stock_count=?, image=? WHERE id=?")
-                    ->execute([$name, $brand, $category, $price, $orig ?: $price, $stock, $image, $pid]);
+                $pdo->prepare("UPDATE products SET name=?, brand=?, category=?, second_category=?, price=?, original_price=?, stock_count=?, image=? WHERE id=?")
+                    ->execute([$name, $brand, $category, $second_cat, $price, $orig ?: $price, $stock, $image, $pid]);
                 $specs_raw = trim($_POST['specs'] ?? '');
                 $pdo->prepare("DELETE FROM product_specs WHERE product_id=?")->execute([$pid]);
                 if ($specs_raw) {
@@ -753,7 +760,7 @@ $status_colors = [
     'cancelled'  => ['bg' => '#fee2e2', 'color' => '#dc2626'],
 ];
 
-// ── Nav items (advertisements removed) ───────────────────────────────────────
+// ── Nav items ─────────────────────────────────────────────────────────────────
 $nav_items = [
     ['page' => 'dashboard',  'icon' => 'fa-gauge-high',   'label' => 'Dashboard',   'roles' => ['admin','superadmin']],
     ['page' => 'products',   'icon' => 'fa-box',          'label' => 'Products',    'roles' => ['admin','superadmin']],
@@ -772,6 +779,13 @@ $icon_options = [
     'fa-hard-drive','fa-tv','fa-display','fa-keyboard','fa-mouse','fa-headphones',
     'fa-fan','fa-bolt','fa-mobile-screen','fa-camera','fa-gamepad','fa-print',
     'fa-network-wired','fa-wifi','fa-battery-full','fa-plug','fa-toolbox',
+];
+
+// 2nd category label helper
+$second_cat_labels = [
+    'limited_deals' => '🔥 Limited-Time Deals',
+    'best_selling'  => '⭐ Best Selling',
+    ''              => '',
 ];
 ?>
 <!DOCTYPE html>
@@ -896,6 +910,8 @@ $icon_options = [
         .so { background:#fee2e2; color:#dc2626; }
         .si { background:#f3f4f6; color:#6b7280; }
         .sw { background:#fef3c7; color:#92400e; }
+        .sc2-limited  { background:#fee2e2; color:#dc2626; }
+        .sc2-best     { background:#fef9c3; color:#854d0e; }
 
         /* ── ACTION BTNS ─────────────────────────────────────── */
         .ab { width:28px; height:28px; border-radius:7px; border:1px solid rgba(10,10,15,.08); background:var(--surface); color:var(--ink-muted); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:.74rem; transition:all .14s; text-decoration:none; }
@@ -1003,6 +1019,9 @@ $icon_options = [
         .icon-opt:hover   { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
         .icon-opt.selected{ border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
         .icon-preview { width:38px; height:38px; border-radius:var(--r-md); background:var(--accent-dim); display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:1.1rem; flex-shrink:0; }
+
+        /* ── 2ND CATEGORY RADIO PILLS ────────────────────────── */
+        .sc-radio-lbl { transition: all .15s; user-select: none; }
 
         /* ── FLASH ───────────────────────────────────────────── */
         .flash { display:flex; align-items:center; gap:9px; padding:.85rem 1.1rem; border-radius:var(--r-md); font-size:.86rem; font-weight:600; margin-bottom:1.2rem; animation:fadeUp .3s ease; }
@@ -1438,6 +1457,223 @@ $icon_options = [
         <?php /* ─────────── PRODUCTS ─────────── */ ?>
         <?php elseif ($active==='products'): ?>
 
+        <!-- ══ LIMITED-TIME DEALS WIDGET ══ -->
+        <?php
+        $dash_deals = [];
+        if ($pdo) {
+            try {
+                $stmt = $pdo->query("SELECT * FROM products WHERE (second_category = 'limited_deals' OR (original_price > price AND original_price > 0)) AND stock_count > 0 ORDER BY (original_price - price) DESC LIMIT 5");
+                $dash_deals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {
+                try {
+                    $stmt = $pdo->query("SELECT * FROM products WHERE original_price > price AND stock_count > 0 ORDER BY (original_price - price) DESC LIMIT 5");
+                    $dash_deals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } catch (PDOException $e2) {}
+            }
+        }
+        ?>
+        <div class="tc" style="margin-bottom:13px">
+            <div class="tc-hdr">
+                <div>
+                    <h3>🔥 Limited-Time Deals</h3>
+                    <p>Products tagged as Limited-Time Deals or with a discount price set</p>
+                </div>
+                <a href="?page=products" class="btn-o btn-sm"><i class="fas fa-arrow-right"></i> Manage Products</a>
+            </div>
+            <?php if ($dash_deals): ?>
+            <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Image</th><th>Product</th><th>Category</th>
+                        <th>Sale Price</th><th>Original Price</th><th>Saving</th><th>Disc %</th>
+                        <th>Stock</th><th>Status</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($dash_deals as $p):
+                    $disc  = ($p['original_price'] ?? 0) > 0 ? round((1 - $p['price']/($p['original_price'] ?: 1))*100) : 0;
+                    $saved = ($p['original_price'] ?? 0) - $p['price'];
+                    $stk   = (int)$p['stock_count'];
+                    $scls  = $stk <= 0 ? 'so' : ($stk <= 5 ? 'sl' : 'sa');
+                    $slbl  = $stk <= 0 ? 'Out of Stock' : ($stk <= 5 ? 'Low Stock ('.$stk.')' : 'Active');
+                    $cat_label = $cat_map[$p['category']]['label'] ?? ucfirst($p['category']);
+                    $edit_data = [
+                        'id'=>(int)$p['id'],'name'=>$p['name'],'brand'=>$p['brand']??'',
+                        'category'=>$p['category'],'second_category'=>$p['second_category']??'',
+                        'price'=>$p['price'],'original_price'=>$p['original_price']??'','stock_count'=>$stk,
+                        'image'=>$p['image']??'','specs'=>$p['specs']??'',
+                    ];
+                ?>
+                <tr>
+                    <td>
+                        <?php if (!empty($p['image'])): ?>
+                        <img src="../<?= htmlspecialchars($p['image']) ?>" style="width:38px;height:38px;object-fit:contain;border-radius:6px;background:var(--surface)" onerror="this.style.display='none'">
+                        <?php else: ?>
+                        <div style="width:38px;height:38px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:.77rem"><i class="fas fa-box"></i></div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <strong><?= htmlspecialchars($p['name']) ?></strong>
+                        <?php if (!empty($p['brand'])): ?>
+                        <div style="font-size:.68rem;color:var(--ink-muted)"><?= htmlspecialchars($p['brand']) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td><span class="sb si" style="font-size:.67rem"><?= htmlspecialchars($cat_label) ?></span></td>
+                    <td><strong style="color:#0cb100">LKR <?= number_format($p['price']) ?></strong></td>
+                    <td class="muted" style="text-decoration:line-through">LKR <?= number_format($p['original_price'] ?? 0) ?></td>
+                    <td><strong style="color:#16a34a;font-size:.82rem">LKR <?= number_format($saved) ?></strong></td>
+                    <td>
+                        <span style="background:#fee2e2;color:#dc2626;font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:100px">
+                            -<?= $disc ?>%
+                        </span>
+                    </td>
+                    <td>
+                        <form method="POST" action="?page=products" class="se-form">
+                            <input type="hidden" name="_action" value="update_stock">
+                            <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
+                            <input type="number" name="stock_count" value="<?= $stk ?>" min="0" class="se-num">
+                            <button type="submit" class="ab warn" title="Save"><i class="fas fa-check"></i></button>
+                        </form>
+                    </td>
+                    <td><span class="sb <?= $scls ?>"><?= $slbl ?></span></td>
+                    <td>
+                        <div style="display:flex;gap:4px">
+                            <a href="../product-details.php?id=<?= $p['id'] ?>" class="ab" target="_blank" title="View"><i class="fas fa-eye"></i></a>
+                            <button class="ab edit" onclick="openEditProduct(<?= htmlspecialchars(json_encode($edit_data), ENT_QUOTES) ?>)" title="Edit"><i class="fas fa-pen"></i></button>
+                        </div>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php else: ?>
+            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted);font-size:.85rem">
+                <i class="fas fa-tag" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.18"></i>
+                No deals yet. Tag a product as <strong>Limited-Time Deals</strong> or set a discount price to show it here.
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- ══ BEST SELLING PRODUCTS WIDGET ══ -->
+        <?php
+        $dash_bestsellers = [];
+        if ($pdo) {
+            try {
+                $stmt = $pdo->query(
+                    "SELECT p.*, COALESCE(SUM(oi.quantity),0) as total_sold
+                     FROM products p
+                     LEFT JOIN order_items oi ON oi.product_id = p.id
+                     WHERE p.stock_count > 0
+                     GROUP BY p.id
+                     ORDER BY (p.second_category = 'best_selling') DESC, total_sold DESC, p.id ASC
+                     LIMIT 10"
+                );
+                $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {
+                try {
+                    $stmt = $pdo->query("SELECT *, 0 as total_sold FROM products WHERE stock_count > 0 ORDER BY (second_category = 'best_selling') DESC, id ASC LIMIT 10");
+                    $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } catch (PDOException $e2) {}
+            }
+        }
+        $max_sold = !empty($dash_bestsellers) ? max(array_column($dash_bestsellers,'total_sold')) : 1;
+        if ($max_sold < 1) $max_sold = 1;
+        ?>
+        <div class="tc" style="margin-bottom:13px">
+            <div class="tc-hdr">
+                <div>
+                    <h3>⭐ Best Selling Products</h3>
+                    <p>Manually tagged items appear first, then sorted by units sold</p>
+                </div>
+                <a href="?page=products" class="btn-o btn-sm"><i class="fas fa-arrow-right"></i> Manage Products</a>
+            </div>
+            <?php if ($dash_bestsellers): ?>
+            <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th><th>Image</th><th>Product</th><th>Category</th>
+                        <th>Price (LKR)</th><th>Units Sold</th><th>Sales Bar</th>
+                        <th>Stock</th><th>Status</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($dash_bestsellers as $rank => $p):
+                    $stk   = (int)$p['stock_count'];
+                    $scls  = $stk <= 0 ? 'so' : ($stk <= 5 ? 'sl' : 'sa');
+                    $slbl  = $stk <= 0 ? 'Out of Stock' : ($stk <= 5 ? 'Low Stock' : 'Active');
+                    $cat_label = $cat_map[$p['category']]['label'] ?? ucfirst($p['category']);
+                    $sold  = (int)($p['total_sold'] ?? 0);
+                    $bar_w = round($sold / $max_sold * 100);
+                    $medals = ['🥇','🥈','🥉'];
+                    $medal  = isset($medals[$rank]) ? $medals[$rank] : '#'.($rank+1);
+                    $medal_colors = ['#f59e0b','#94a3b8','#b45309'];
+                    $medal_color  = $rank < 3 ? $medal_colors[$rank] : 'var(--ink-muted)';
+                    $is_tagged = ($p['second_category'] ?? '') === 'best_selling';
+                    $edit_data = [
+                        'id'=>(int)$p['id'],'name'=>$p['name'],'brand'=>$p['brand']??'',
+                        'category'=>$p['category'],'second_category'=>$p['second_category']??'',
+                        'price'=>$p['price'],'original_price'=>$p['original_price']??$p['price'],'stock_count'=>$stk,
+                        'image'=>$p['image']??'','specs'=>$p['specs']??'',
+                    ];
+                ?>
+                <tr>
+                    <td style="text-align:center;font-size:.9rem;font-weight:800;color:<?= $medal_color ?>"><?= $medal ?><?php if ($is_tagged): ?><div style="font-size:.55rem;color:#854d0e;margin-top:1px">⭐ Tagged</div><?php endif; ?></td>
+                    <td>
+                        <?php if (!empty($p['image'])): ?>
+                        <img src="../<?= htmlspecialchars($p['image']) ?>" style="width:38px;height:38px;object-fit:contain;border-radius:6px;background:var(--surface)" onerror="this.style.display='none'">
+                        <?php else: ?>
+                        <div style="width:38px;height:38px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:.77rem"><i class="fas fa-microchip"></i></div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <strong><?= htmlspecialchars($p['name']) ?></strong>
+                        <?php if (!empty($p['brand'])): ?>
+                        <div style="font-size:.68rem;color:var(--ink-muted)"><?= htmlspecialchars($p['brand']) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td><span class="sb si" style="font-size:.67rem"><?= htmlspecialchars($cat_label) ?></span></td>
+                    <td><strong>LKR <?= number_format($p['price']) ?></strong></td>
+                    <td>
+                        <strong style="font-size:.95rem;color:var(--ink)"><?= number_format($sold) ?></strong>
+                        <div style="font-size:.65rem;color:var(--ink-muted)"><?= $sold === 1 ? 'unit' : 'units' ?></div>
+                    </td>
+                    <td style="min-width:110px">
+                        <div style="background:var(--surface);border-radius:100px;height:6px;overflow:hidden">
+                            <div style="width:<?= $bar_w ?>%;height:100%;background:var(--accent);border-radius:100px"></div>
+                        </div>
+                        <div style="font-size:.62rem;color:var(--ink-muted);margin-top:2px"><?= $bar_w ?>% of top</div>
+                    </td>
+                    <td>
+                        <form method="POST" action="?page=products" class="se-form">
+                            <input type="hidden" name="_action" value="update_stock">
+                            <input type="hidden" name="product_id" value="<?= $p['id'] ?>">
+                            <input type="number" name="stock_count" value="<?= $stk ?>" min="0" class="se-num">
+                            <button type="submit" class="ab warn" title="Save stock"><i class="fas fa-check"></i></button>
+                        </form>
+                    </td>
+                    <td><span class="sb <?= $scls ?>"><?= $slbl ?></span></td>
+                    <td>
+                        <div style="display:flex;gap:4px">
+                            <a href="../product-details.php?id=<?= $p['id'] ?>" class="ab" target="_blank" title="View on site"><i class="fas fa-eye"></i></a>
+                            <button class="ab edit" onclick="openEditProduct(<?= htmlspecialchars(json_encode($edit_data), ENT_QUOTES) ?>)" title="Edit product"><i class="fas fa-pen"></i></button>
+                        </div>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php else: ?>
+            <div style="padding:2.5rem;text-align:center;color:var(--ink-muted);font-size:.85rem">
+                <i class="fas fa-star" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.18"></i>
+                No products in stock yet.
+            </div>
+            <?php endif; ?>
+        </div>
+
         <div class="pg-hdr">
             <div class="pg-hdr-l">
                 <h2>Products</h2>
@@ -1475,7 +1711,7 @@ $icon_options = [
             <div class="tbl-wrap">
             <table id="prodTable">
                 <thead>
-                    <tr><th>ID</th><th>Image</th><th>Product / Specs</th><th>Brand</th><th>Category</th><th>Price (LKR)</th><th>Orig. Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr>
+                    <tr><th>ID</th><th>Image</th><th>Product / Specs</th><th>Brand</th><th>Category</th><th>2nd Cat</th><th>Price (LKR)</th><th>Disc. Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                 <?php if ($db_products): foreach ($db_products as $p):
@@ -1484,16 +1720,18 @@ $icon_options = [
                     $slbl=$stk===0?'Out of Stock':($stk<=5?'Low Stock':'Active');
                     $cat_label=$cat_map[$p['category']]['label'] ?? ucfirst($p['category']);
                     $is_orphan = $p['category'] && !isset($cat_map[$p['category']]);
+                    $sc2 = $p['second_category'] ?? '';
                     $edit_data = [
-                        'id'             => (int)$p['id'],
-                        'name'           => $p['name'],
-                        'brand'          => $p['brand'] ?? '',
-                        'category'       => $p['category'],
-                        'price'          => $p['price'],
-                        'original_price' => $p['original_price'] ?? '',
-                        'stock_count'    => $stk,
-                        'image'          => $p['image'] ?? '',
-                        'specs'          => $p['specs'] ?? '',
+                        'id'              => (int)$p['id'],
+                        'name'            => $p['name'],
+                        'brand'           => $p['brand'] ?? '',
+                        'category'        => $p['category'],
+                        'second_category' => $sc2,
+                        'price'           => $p['price'],
+                        'original_price'  => $p['original_price'] ?? '',
+                        'stock_count'     => $stk,
+                        'image'           => $p['image'] ?? '',
+                        'specs'           => $p['specs'] ?? '',
                     ];
                 ?>
                 <tr data-cat="<?= htmlspecialchars($p['category']) ?>">
@@ -1518,8 +1756,21 @@ $icon_options = [
                             <?= htmlspecialchars($cat_label) ?>
                         </span>
                     </td>
+                    <td>
+                        <?php if ($sc2 === 'limited_deals'): ?>
+                        <span class="sb sc2-limited" style="font-size:.63rem">🔥 Deals</span>
+                        <?php elseif ($sc2 === 'best_selling'): ?>
+                        <span class="sb sc2-best" style="font-size:.63rem">⭐ Best</span>
+                        <?php else: ?>
+                        <span class="muted" style="font-size:.72rem">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td><strong><?= number_format($p['price'],2) ?></strong></td>
-                    <td class="muted"><?= $p['original_price']?number_format($p['original_price'],2):'—' ?></td>
+                    <td class="muted">
+                        <?php if ($p['original_price'] && $p['original_price'] > $p['price']): ?>
+                        <span style="text-decoration:line-through"><?= number_format($p['original_price'],2) ?></span>
+                        <?php else: ?>—<?php endif; ?>
+                    </td>
                     <td>
                         <form method="POST" class="se-form">
                             <input type="hidden" name="_action" value="update_stock">
@@ -1545,7 +1796,7 @@ $icon_options = [
                     </td>
                 </tr>
                 <?php endforeach; else: ?>
-                <tr><td colspan="10" style="text-align:center;padding:3rem;color:var(--ink-muted)">No products found.</td></tr>
+                <tr><td colspan="11" style="text-align:center;padding:3rem;color:var(--ink-muted)">No products found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
@@ -2012,7 +2263,7 @@ $icon_options = [
         </div>
 
 
-        <?php /* ─────────── MEDIA (Hero Slides + Popup Images) ─────────── */ ?>
+        <?php /* ─────────── MEDIA ─────────── */ ?>
         <?php elseif ($active==='media'): ?>
 
         <div class="pg-hdr">
@@ -2029,341 +2280,110 @@ $icon_options = [
             </div>
         </div>
 
-        <!-- Sub-tabs -->
         <div class="sub-tabs">
             <a href="?page=media&tab=hero_slides"  class="sub-tab <?= $active_tab==='hero_slides'?'active':'' ?>"><i class="fas fa-panorama"></i> Hero Slider</a>
             <a href="?page=media&tab=popup_images" class="sub-tab <?= $active_tab==='popup_images'?'active':'' ?>"><i class="fas fa-window-maximize"></i> Popup Images</a>
         </div>
 
         <?php if ($active_tab === 'hero_slides'): ?>
-        <!-- ══ HERO SLIDES TAB ══ -->
-
         <div class="ad-stats">
-            <?php $hstats=[
-                ['Total Slides',  count($db_hero_slides),  'fa-panorama',    '#0cb100'],
-                ['Active',        $active_hero_slides,     'fa-circle-check','#3b82f6'],
-                ['Inactive',      count($db_hero_slides)-$active_hero_slides,'fa-circle-pause','#f59e0b'],
-            ];
+            <?php $hstats=[['Total Slides',count($db_hero_slides),'fa-panorama','#0cb100'],['Active',$active_hero_slides,'fa-circle-check','#3b82f6'],['Inactive',count($db_hero_slides)-$active_hero_slides,'fa-circle-pause','#f59e0b']];
             foreach ($hstats as $s): ?>
-            <div class="ad-stat">
-                <div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div>
-                <div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div>
-            </div>
+            <div class="ad-stat"><div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div><div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div></div>
             <?php endforeach; ?>
         </div>
-
         <div class="cc" style="margin-bottom:1.2rem">
-            <h3>Live Preview</h3>
-            <p>Approximate appearance of your hero slider</p>
+            <h3>Live Preview</h3><p>Approximate appearance of your hero slider</p>
             <div style="border-radius:var(--r-md);overflow:hidden;background:#0d0d14;min-height:120px;position:relative;display:flex;align-items:center;justify-content:center">
                 <?php $first_active_slide = null; foreach ($db_hero_slides as $s) { if ($s['is_active']) { $first_active_slide = $s; break; } } ?>
-                <?php if ($first_active_slide && $first_active_slide['image_url']): ?>
-                <img src="../<?= htmlspecialchars($first_active_slide['image_url']) ?>" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.45" onerror="this.remove()">
-                <?php endif; ?>
+                <?php if ($first_active_slide && $first_active_slide['image_url']): ?><img src="../<?= htmlspecialchars($first_active_slide['image_url']) ?>" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.45" onerror="this.remove()"><?php endif; ?>
                 <div style="position:relative;z-index:1;text-align:center;padding:1.5rem">
                     <?php if ($first_active_slide): ?>
                     <div style="font-size:.62rem;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.4rem">● Live</div>
                     <div style="font-size:1rem;font-weight:800;color:#fff;margin-bottom:.3rem"><?= htmlspecialchars($first_active_slide['title'] ?: 'Hero Slide') ?></div>
                     <div style="font-size:.74rem;color:rgba(255,255,255,.55)"><?= htmlspecialchars($first_active_slide['subtitle']) ?></div>
-                    <?php else: ?>
-                    <div style="color:rgba(255,255,255,.25);font-size:.85rem">No active slides — add one below</div>
-                    <?php endif; ?>
+                    <?php else: ?><div style="color:rgba(255,255,255,.25);font-size:.85rem">No active slides — add one below</div><?php endif; ?>
                 </div>
             </div>
-            <?php if ($active_hero_slides > 1): ?>
-            <div style="text-align:center;margin-top:.6rem;font-size:.73rem;color:var(--ink-muted)">
-                <i class="fas fa-images" style="margin-right:4px"></i> <?= $active_hero_slides ?> slides will rotate automatically
-            </div>
-            <?php endif; ?>
         </div>
-
         <?php if (empty($db_hero_slides)): ?>
-        <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)">
-            <i class="fas fa-panorama" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>
-            No hero slides yet. Click <strong>Add Slide</strong> to create your first one.
-        </div>
+        <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)"><i class="fas fa-panorama" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>No hero slides yet.</div>
         <?php else: ?>
         <div class="media-cards">
             <?php foreach ($db_hero_slides as $i => $slide):
-                $s_edit = ['id'=>$slide['id'],'image_url'=>$slide['image_url'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
+                $s_edit = ['id'=>$slide['id'],'title'=>$slide['title'],'subtitle'=>$slide['subtitle'],'image_url'=>$slide['image_url'],'link_url'=>$slide['link_url'],'btn_text'=>$slide['btn_text'],'btn_ghost_text'=>$slide['btn_ghost_text'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
             ?>
             <div class="media-card <?= $slide['is_active'] ? '' : 'inactive' ?>" style="animation-delay:<?= $i*40 ?>ms">
                 <div class="media-img-wrap">
-                    <?php if ($slide['image_url']): ?>
-                    <img src="../<?= htmlspecialchars($slide['image_url']) ?>" alt="" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-panorama></i></div>'">
-                    <?php else: ?>
-                    <div class="media-img-ph"><i class="fas fa-panorama"></i></div>
-                    <?php endif; ?>
-                    <span class="ad-status-pill" style="background:<?= $slide['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $slide['is_active']?'#15803d':'#dc2626' ?>">
-                        <i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i>
-                        <?= $slide['is_active'] ? 'Active' : 'Inactive' ?>
-                    </span>
+                    <?php if ($slide['image_url']): ?><img src="../<?= htmlspecialchars($slide['image_url']) ?>" alt="" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-panorama></i></div>'"><?php else: ?><div class="media-img-ph"><i class="fas fa-panorama"></i></div><?php endif; ?>
+                    <span class="ad-status-pill" style="background:<?= $slide['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $slide['is_active']?'#15803d':'#dc2626' ?>"><i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i> <?= $slide['is_active'] ? 'Active' : 'Inactive' ?></span>
                     <span class="ad-sort-pill">Order #<?= $slide['sort_order'] ?></span>
                 </div>
                 <div class="media-card-body">
                     <strong><?= htmlspecialchars($slide['title'] ?: 'Slide #'.$slide['id']) ?></strong>
                     <div class="sub"><?= htmlspecialchars($slide['subtitle'] ?: '—') ?></div>
-                    <div style="display:flex;gap:5px;flex-wrap:wrap">
-                        <?php if ($slide['btn_text']): ?><span class="ad-meta-tag"><i class="fas fa-arrow-pointer"></i><?= htmlspecialchars($slide['btn_text']) ?></span><?php endif; ?>
-                        <?php if ($slide['btn_ghost_text']): ?><span class="ad-meta-tag"><?= htmlspecialchars($slide['btn_ghost_text']) ?></span><?php endif; ?>
-                        <?php if ($slide['link_url']): ?><span class="ad-meta-tag"><i class="fas fa-link"></i><?= htmlspecialchars(substr($slide['link_url'],0,18)) ?>…</span><?php endif; ?>
-                    </div>
                 </div>
                 <div class="media-card-foot">
                     <span style="font-size:.68rem;color:var(--ink-muted)"><i class="fas fa-calendar" style="margin-right:3px"></i><?= date('d M Y', strtotime($slide['created_at'])) ?></span>
                     <div style="display:flex;gap:4px">
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="_action" value="toggle_hero_slide">
-                            <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
-                            <button type="submit" class="ab <?= $slide['is_active'] ? 'warn' : '' ?>" title="<?= $slide['is_active']?'Deactivate':'Activate' ?>">
-                                <i class="fas fa-<?= $slide['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
-                            </button>
-                        </form>
-                        <button class="ab edit" title="Edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this hero slide?')">
-                            <input type="hidden" name="_action" value="delete_hero_slide">
-                            <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
-                            <button type="submit" class="ab del"><i class="fas fa-trash"></i></button>
-                        </form>
+                        <form method="POST" style="display:inline"><input type="hidden" name="_action" value="toggle_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab <?= $slide['is_active'] ? 'warn' : '' ?>" title="Toggle"><i class="fas fa-<?= $slide['is_active'] ? 'eye-slash' : 'eye' ?>"></i></button></form>
+                        <button class="ab edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
+                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
                     </div>
                 </div>
             </div>
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
+        <div class="tc"><div class="tc-hdr"><div><h3>All Hero Slides</h3></div></div><div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Preview</th><th>Title</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        <?php if ($db_hero_slides): foreach ($db_hero_slides as $slide): $s_edit=['id'=>$slide['id'],'title'=>$slide['title'],'subtitle'=>$slide['subtitle'],'image_url'=>$slide['image_url'],'link_url'=>$slide['link_url'],'btn_text'=>$slide['btn_text'],'btn_ghost_text'=>$slide['btn_ghost_text'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']]; ?>
+        <tr><td class="muted"><?= $slide['id'] ?></td><td><?php if ($slide['image_url']): ?><img src="../<?= htmlspecialchars($slide['image_url']) ?>" style="width:56px;height:36px;object-fit:cover;border-radius:5px"><?php endif; ?></td><td><strong><?= htmlspecialchars($slide['title'] ?: '—') ?></strong></td><td class="muted"><?= $slide['sort_order'] ?></td><td><form method="POST" style="display:inline"><input type="hidden" name="_action" value="toggle_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="sb <?= $slide['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $slide['is_active']?'● Active':'● Inactive' ?></button></form></td><td><div style="display:flex;gap:4px"><button class="ab edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button><form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form></div></td></tr>
+        <?php endforeach; else: ?><tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--ink-muted)">No slides yet.</td></tr><?php endif; ?>
+        </tbody></table></div></div>
 
-        <div class="tc">
-            <div class="tc-hdr"><div><h3>All Hero Slides</h3><p>Manage the homepage hero slider images</p></div></div>
-            <div class="tbl-wrap">
-            <table>
-                <thead><tr><th>ID</th><th>Preview</th><th>Title</th><th>Subtitle</th><th>Buttons</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
-                    <?php if ($db_hero_slides): foreach ($db_hero_slides as $slide):
-                        $s_edit = ['id'=>$slide['id'],'title'=>$slide['title'],'subtitle'=>$slide['subtitle'],'image_url'=>$slide['image_url'],'link_url'=>$slide['link_url'],'btn_text'=>$slide['btn_text'],'btn_ghost_text'=>$slide['btn_ghost_text'],'is_active'=>$slide['is_active'],'sort_order'=>$slide['sort_order']];
-                    ?>
-                    <tr>
-                        <td class="muted"><?= $slide['id'] ?></td>
-                        <td><?php if ($slide['image_url']): ?><img src="../<?= htmlspecialchars($slide['image_url']) ?>" style="width:56px;height:36px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'"><?php else: ?><div style="width:56px;height:36px;background:var(--surface);border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted)"><i class="fas fa-image"></i></div><?php endif; ?></td>
-                        <td><strong><?= htmlspecialchars($slide['title'] ?: '—') ?></strong></td>
-                        <td class="muted" style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($slide['subtitle'] ?: '—') ?></td>
-                        <td><span style="font-size:.71rem;color:var(--ink-muted)"><?= htmlspecialchars($slide['btn_text']) ?> / <?= htmlspecialchars($slide['btn_ghost_text']) ?></span></td>
-                        <td class="muted"><?= $slide['sort_order'] ?></td>
-                        <td>
-                            <form method="POST" style="display:inline">
-                                <input type="hidden" name="_action" value="toggle_hero_slide">
-                                <input type="hidden" name="slide_id" value="<?= $slide['id'] ?>">
-                                <button type="submit" class="sb <?= $slide['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $slide['is_active']?'● Active':'● Inactive' ?></button>
-                            </form>
-                        </td>
-                        <td>
-                            <div style="display:flex;gap:4px">
-                                <button class="ab edit" onclick="openEditHeroSlide(<?= htmlspecialchars(json_encode($s_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_hero_slide"><input type="hidden" name="slide_id" value="<?= $slide['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
-                            </div>
-                        </td>
-                    </tr>
-                    <?php endforeach; else: ?>
-                    <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--ink-muted)">No hero slides yet.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-            </div>
-        </div>
-
-        <?php else: /* popup_images tab */ ?>
-        <!-- ══ POPUP IMAGES TAB ══ -->
-
+        <?php else: /* popup_images */ ?>
         <div class="ad-stats">
-            <?php $pstats=[
-                ['Total Images',  count($db_popup_images),  'fa-window-maximize','#0cb100'],
-                ['Active',        $active_popup_images,     'fa-circle-check',   '#3b82f6'],
-                ['Inactive',      count($db_popup_images)-$active_popup_images,'fa-circle-pause','#f59e0b'],
-            ];
+            <?php $pstats=[['Total Images',count($db_popup_images),'fa-window-maximize','#0cb100'],['Active',$active_popup_images,'fa-circle-check','#3b82f6'],['Inactive',count($db_popup_images)-$active_popup_images,'fa-circle-pause','#f59e0b']];
             foreach ($pstats as $s): ?>
-            <div class="ad-stat">
-                <div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div>
-                <div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div>
-            </div>
+            <div class="ad-stat"><div class="ad-stat-ico" style="background:<?= $s[3] ?>18;color:<?= $s[3] ?>"><i class="fas <?= $s[2] ?>"></i></div><div><div class="ad-stat-l"><?= $s[0] ?></div><div class="ad-stat-v"><?= $s[1] ?></div></div></div>
             <?php endforeach; ?>
         </div>
-
-        <div class="db-warn" style="margin-bottom:1rem">
-            <i class="fas fa-info-circle"></i>
-            The popup carousel shows all <strong>active</strong> images in order.
-        </div>
-
         <?php if (empty($db_popup_images)): ?>
-        <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)">
-            <i class="fas fa-window-maximize" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>
-            No popup images yet. Click <strong>Add Popup Image</strong> to create your first one.
-        </div>
+        <div style="background:var(--card);border-radius:var(--r-lg);border:2px dashed rgba(10,10,15,.1);padding:3rem;text-align:center;color:var(--ink-muted)"><i class="fas fa-window-maximize" style="font-size:2.5rem;margin-bottom:.7rem;display:block;opacity:.2"></i>No popup images yet.</div>
         <?php else: ?>
         <div class="media-cards">
-            <?php foreach ($db_popup_images as $i => $pi):
-                $p_edit = ['id'=>$pi['id'],'image_src'=>$pi['image_src'],'alt_text'=>$pi['alt_text'],'link_url'=>$pi['link_url'],'is_active'=>$pi['is_active'],'sort_order'=>$pi['sort_order']];
-            ?>
+            <?php foreach ($db_popup_images as $i => $pi): $p_edit=['id'=>$pi['id'],'image_src'=>$pi['image_src'],'alt_text'=>$pi['alt_text'],'link_url'=>$pi['link_url'],'is_active'=>$pi['is_active'],'sort_order'=>$pi['sort_order']]; ?>
             <div class="media-card <?= $pi['is_active'] ? '' : 'inactive' ?>" style="animation-delay:<?= $i*40 ?>ms">
-                <div class="media-img-wrap">
-                    <img src="../<?= htmlspecialchars($pi['image_src']) ?>" alt="<?= htmlspecialchars($pi['alt_text']) ?>" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-image></i></div>'">
-                    <span class="ad-status-pill" style="background:<?= $pi['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $pi['is_active']?'#15803d':'#dc2626' ?>">
-                        <i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i>
-                        <?= $pi['is_active'] ? 'Active' : 'Inactive' ?>
-                    </span>
-                    <span class="ad-sort-pill">Order #<?= $pi['sort_order'] ?></span>
-                </div>
-                <div class="media-card-body">
-                    <strong><?= htmlspecialchars($pi['alt_text'] ?: 'Popup #'.$pi['id']) ?></strong>
-                    <div class="sub"><?= $pi['link_url'] ? '<i class="fas fa-link" style="font-size:.62rem;margin-right:3px"></i>'.htmlspecialchars(substr($pi['link_url'],0,30)) : 'No link' ?></div>
-                </div>
-                <div class="media-card-foot">
-                    <span style="font-size:.68rem;color:var(--ink-muted)"><i class="fas fa-calendar" style="margin-right:3px"></i><?= date('d M Y', strtotime($pi['created_at'])) ?></span>
-                    <div style="display:flex;gap:4px">
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="_action" value="toggle_popup_image">
-                            <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
-                            <button type="submit" class="ab <?= $pi['is_active'] ? 'warn' : '' ?>" title="<?= $pi['is_active']?'Deactivate':'Activate' ?>">
-                                <i class="fas fa-<?= $pi['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
-                            </button>
-                        </form>
-                        <button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this popup image?')">
-                            <input type="hidden" name="_action" value="delete_popup_image">
-                            <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
-                            <button type="submit" class="ab del"><i class="fas fa-trash"></i></button>
-                        </form>
-                    </div>
-                </div>
+                <div class="media-img-wrap"><img src="../<?= htmlspecialchars($pi['image_src']) ?>" alt="<?= htmlspecialchars($pi['alt_text']) ?>" onerror="this.parentNode.innerHTML='<div class=media-img-ph><i class=fas\ fa-image></i></div>'"><span class="ad-status-pill" style="background:<?= $pi['is_active']?'#dcfce7':'#fee2e2' ?>;color:<?= $pi['is_active']?'#15803d':'#dc2626' ?>"><i class="fas fa-circle" style="font-size:.45rem;vertical-align:middle"></i> <?= $pi['is_active'] ? 'Active' : 'Inactive' ?></span><span class="ad-sort-pill">Order #<?= $pi['sort_order'] ?></span></div>
+                <div class="media-card-body"><strong><?= htmlspecialchars($pi['alt_text'] ?: 'Popup #'.$pi['id']) ?></strong><div class="sub"><?= $pi['link_url'] ? htmlspecialchars(substr($pi['link_url'],0,30)) : 'No link' ?></div></div>
+                <div class="media-card-foot"><span style="font-size:.68rem;color:var(--ink-muted)"><?= date('d M Y', strtotime($pi['created_at'])) ?></span><div style="display:flex;gap:4px"><form method="POST" style="display:inline"><input type="hidden" name="_action" value="toggle_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab <?= $pi['is_active'] ? 'warn' : '' ?>" title="Toggle"><i class="fas fa-<?= $pi['is_active'] ? 'eye-slash' : 'eye' ?>"></i></button></form><button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button><form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form></div></div>
             </div>
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
-
-        <div class="tc">
-            <div class="tc-hdr"><div><h3>All Popup Images</h3><p>Shown in the page-load modal carousel</p></div></div>
-            <div class="tbl-wrap">
-            <table>
-                <thead><tr><th>ID</th><th>Preview</th><th>Alt Text</th><th>Link</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
-                    <?php if ($db_popup_images): foreach ($db_popup_images as $pi):
-                        $p_edit=['id'=>$pi['id'],'image_src'=>$pi['image_src'],'alt_text'=>$pi['alt_text'],'link_url'=>$pi['link_url'],'is_active'=>$pi['is_active'],'sort_order'=>$pi['sort_order']];
-                    ?>
-                    <tr>
-                        <td class="muted"><?= $pi['id'] ?></td>
-                        <td><img src="../<?= htmlspecialchars($pi['image_src']) ?>" style="width:50px;height:38px;object-fit:cover;border-radius:5px" onerror="this.style.display='none'"></td>
-                        <td><strong><?= htmlspecialchars($pi['alt_text'] ?: '—') ?></strong></td>
-                        <td class="muted" style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= $pi['link_url'] ? '<a href="'.htmlspecialchars($pi['link_url']).'" target="_blank" style="color:var(--accent);font-size:.77rem">'.htmlspecialchars(substr($pi['link_url'],0,25)).'</a>' : '—' ?></td>
-                        <td class="muted"><?= $pi['sort_order'] ?></td>
-                        <td>
-                            <form method="POST" style="display:inline">
-                                <input type="hidden" name="_action" value="toggle_popup_image">
-                                <input type="hidden" name="popup_id" value="<?= $pi['id'] ?>">
-                                <button type="submit" class="sb <?= $pi['is_active']?'sa':'so' ?>" style="border:none;cursor:pointer;font-family:inherit;font-size:.68rem;font-weight:700"><?= $pi['is_active']?'● Active':'● Inactive' ?></button>
-                            </form>
-                        </td>
-                        <td>
-                            <div style="display:flex;gap:4px">
-                                <button class="ab edit" onclick="openEditPopupImage(<?= htmlspecialchars(json_encode($p_edit)) ?>)"><i class="fas fa-pen"></i></button>
-                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete?')"><input type="hidden" name="_action" value="delete_popup_image"><input type="hidden" name="popup_id" value="<?= $pi['id'] ?>"><button type="submit" class="ab del"><i class="fas fa-trash"></i></button></form>
-                            </div>
-                        </td>
-                    </tr>
-                    <?php endforeach; else: ?>
-                    <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--ink-muted)">No popup images yet.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-            </div>
-        </div>
-
-        <?php endif; /* end media sub-tabs */ ?>
+        <?php endif; ?>
 
 
         <?php /* ─────────── REPORTS ─────────── */ ?>
         <?php elseif ($active==='reports'): ?>
 
-        <div class="pg-hdr">
-            <div class="pg-hdr-l"><h2>Reports</h2><p>Live analytics from database</p></div>
-            <button class="btn-o btn-sm"><i class="fas fa-download"></i> Export</button>
-        </div>
-
+        <div class="pg-hdr"><div class="pg-hdr-l"><h2>Reports</h2><p>Live analytics from database</p></div></div>
         <div class="stats-g" style="margin-bottom:1.25rem">
-            <?php
-            $rs=[
-                ['Total Revenue',   'LKR '.number_format($order_stats['revenue']??0), 'all orders', true, '#0cb100'],
-                ['Total Orders',    $order_stats['total_orders']??count($db_orders),  'all time',   true, '#3b82f6'],
-                ['Pending Orders',  $pending_count,                                   'to fulfill', ($pending_count===0), '#f59e0b'],
-                ['Catalogue Size',  $agg['total_products'],                           'products',   true, '#8b5cf6'],
-            ];
+            <?php $rs=[['Total Revenue','LKR '.number_format($order_stats['revenue']??0),'all orders',true,'#0cb100'],['Total Orders',$order_stats['total_orders']??count($db_orders),'all time',true,'#3b82f6'],['Pending Orders',$pending_count,'to fulfill',($pending_count===0),'#f59e0b'],['Catalogue Size',$agg['total_products'],'products',true,'#8b5cf6']];
             foreach ($rs as $i=>$r): ?>
-            <div class="stat-c" style="animation-delay:<?= $i*55 ?>ms">
-                <div class="stat-ico" style="background:<?= $r[4] ?>18;color:<?= $r[4] ?>"><i class="fas fa-chart-simple"></i></div>
-                <div class="stat-b">
-                    <div class="stat-lbl"><?= $r[0] ?></div>
-                    <div class="stat-val"><?= $r[1] ?></div>
-                    <span class="stat-d <?= $r[3]?'up':'dn' ?>"><i class="fas fa-arrow-<?= $r[3]?'up':'down' ?>"></i> <?= $r[2] ?></span>
-                </div>
-            </div>
+            <div class="stat-c" style="animation-delay:<?= $i*55 ?>ms"><div class="stat-ico" style="background:<?= $r[4] ?>18;color:<?= $r[4] ?>"><i class="fas fa-chart-simple"></i></div><div class="stat-b"><div class="stat-lbl"><?= $r[0] ?></div><div class="stat-val"><?= $r[1] ?></div><span class="stat-d <?= $r[3]?'up':'dn' ?>"><i class="fas fa-arrow-<?= $r[3]?'up':'down' ?>"></i> <?= $r[2] ?></span></div></div>
             <?php endforeach; ?>
         </div>
-
         <div class="g2">
-            <div class="cc">
-                <h3>Products by Category</h3>
-                <p>Distribution of catalogue items</p>
-                <?php if ($cat_counts):
-                    $has_products = array_filter($cat_counts, fn($c)=>$c['cnt']>0);
-                    if ($has_products):
-                        $mc2=max(array_column(array_values($has_products),'cnt'));
-                        foreach ($has_products as $cc):
-                            $pct=$mc2>0?round($cc['cnt']/$mc2*100):0; ?>
-                <div class="pw">
-                    <div class="pw-l"><span><?= htmlspecialchars($cc['name']) ?></span><span><?= $cc['cnt'] ?> products</span></div>
-                    <div class="pw-bg"><div class="pw-f" style="width:<?= $pct ?>%"></div></div>
-                </div>
-                <?php endforeach; else: ?><p style="color:var(--ink-muted);font-size:.82rem">No products assigned.</p><?php endif;
-                endif; ?>
+            <div class="cc"><h3>Products by Category</h3><p>Distribution of catalogue items</p>
+                <?php if ($cat_counts): $has_products=array_filter($cat_counts,fn($c)=>$c['cnt']>0); if ($has_products): $mc2=max(array_column(array_values($has_products),'cnt')); foreach ($has_products as $cc): $pct=$mc2>0?round($cc['cnt']/$mc2*100):0; ?>
+                <div class="pw"><div class="pw-l"><span><?= htmlspecialchars($cc['name']) ?></span><span><?= $cc['cnt'] ?></span></div><div class="pw-bg"><div class="pw-f" style="width:<?= $pct ?>%"></div></div></div>
+                <?php endforeach; endif; endif; ?>
             </div>
-
-            <div class="cc">
-                <h3>Order Status Breakdown</h3>
-                <p>All orders by current status</p>
-                <?php
-                $osm=[];
-                foreach ($db_orders as $o) { $s=strtolower($o['status']??'pending'); $osm[$s]=($osm[$s]??0)+1; }
-                $ost=array_sum($osm);
-                $oscol=['completed'=>'#0cb100','shipped'=>'#3b82f6','processing'=>'#8b5cf6','pending'=>'#f59e0b','cancelled'=>'#ef4444'];
-                foreach ($osm as $s=>$cnt):
-                    $pct=$ost>0?round($cnt/$ost*100):0;
-                    $col=$oscol[$s]??'#6b7280';
-                ?>
-                <div class="top-item">
-                    <div style="width:9px;height:9px;border-radius:3px;background:<?= $col ?>;flex-shrink:0"></div>
-                    <div class="top-info"><strong><?= ucfirst($s) ?></strong><span><?= $cnt ?> orders</span></div>
-                    <div style="display:flex;align-items:center;gap:7px">
-                        <div style="width:75px;background:var(--surface);border-radius:100px;height:5px;overflow:hidden"><div style="width:<?= $pct ?>%;height:100%;background:<?= $col ?>;border-radius:100px"></div></div>
-                        <strong style="font-size:.8rem;width:26px;text-align:right"><?= $pct ?>%</strong>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-                <?php if (!$osm): ?><p style="color:var(--ink-muted);font-size:.82rem">No order data.</p><?php endif; ?>
-            </div>
-        </div>
-
-        <div class="cc">
-            <h3>Inventory Health</h3>
-            <p>Stock status across all products</p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:11px;margin-top:.4rem">
-                <?php
-                $ih=[
-                    ['Healthy Stock',  count(array_filter($db_products,fn($p)=>$p['stock_count']>5)),  '#0cb100'],
-                    ['Low Stock (≤5)', count(array_filter($db_products,fn($p)=>$p['stock_count']>0&&$p['stock_count']<=5)), '#f59e0b'],
-                    ['Out of Stock',   (int)($agg['out_of_stock']??0), '#ef4444'],
-                ];
-                foreach ($ih as $h): ?>
-                <div style="background:var(--surface);border-radius:var(--r-md);padding:.9rem;text-align:center">
-                    <div style="font-size:1.55rem;font-weight:800;color:<?= $h[2] ?>"><?= $h[1] ?></div>
-                    <div style="font-size:.72rem;color:var(--ink-muted);font-weight:600;margin-top:2px"><?= $h[0] ?></div>
-                </div>
+            <div class="cc"><h3>Order Status Breakdown</h3><p>All orders by current status</p>
+                <?php $osm=[]; foreach ($db_orders as $o) { $s=strtolower($o['status']??'pending'); $osm[$s]=($osm[$s]??0)+1; } $ost=array_sum($osm); $oscol=['completed'=>'#0cb100','shipped'=>'#3b82f6','processing'=>'#8b5cf6','pending'=>'#f59e0b','cancelled'=>'#ef4444'];
+                foreach ($osm as $s=>$cnt): $pct=$ost>0?round($cnt/$ost*100):0; $col=$oscol[$s]??'#6b7280'; ?>
+                <div class="top-item"><div style="width:9px;height:9px;border-radius:3px;background:<?= $col ?>;flex-shrink:0"></div><div class="top-info"><strong><?= ucfirst($s) ?></strong><span><?= $cnt ?></span></div><div style="display:flex;align-items:center;gap:7px"><div style="width:75px;background:var(--surface);border-radius:100px;height:5px;overflow:hidden"><div style="width:<?= $pct ?>%;height:100%;background:<?= $col ?>;border-radius:100px"></div></div><strong style="font-size:.8rem;width:26px;text-align:right"><?= $pct ?>%</strong></div></div>
                 <?php endforeach; ?>
             </div>
         </div>
@@ -2375,65 +2395,16 @@ $icon_options = [
         <?php if (!$is_superadmin): ?>
         <div class="db-warn"><i class="fas fa-lock"></i> Access denied. Settings are restricted to Super Admins only.</div>
         <?php else: ?>
-
-        <div class="pg-hdr">
-            <div class="pg-hdr-l"><h2>Settings</h2><p>Store configuration and preferences</p></div>
-            <button class="btn-p" onclick="alert('Settings saved!')"><i class="fas fa-floppy-disk"></i> Save Changes</button>
-        </div>
-
-        <div class="sc">
-            <div class="sc-hdr"><i class="fas fa-store"></i> Store Information</div>
-            <?php $store_fields=[['Store Name','Public display name','text','IT Shop.LK'],['Contact Email','Order & support email','email','info@itshop.lk'],['WhatsApp Number','Floating chat button','tel','+94 77 000 0000'],['Store Address','Physical location','text','Colombo 04, Sri Lanka'],['Currency Symbol','Shown before prices','text','LKR']];
-            foreach ($store_fields as $sf): ?>
-            <div class="sc-row">
-                <div class="sc-i"><strong><?= $sf[0] ?></strong><span><?= $sf[1] ?></span></div>
-                <input type="<?= $sf[2] ?>" class="f-input" value="<?= $sf[3] ?>">
-            </div>
+        <div class="pg-hdr"><div class="pg-hdr-l"><h2>Settings</h2></div></div>
+        <div class="sc"><div class="sc-hdr"><i class="fas fa-store"></i> Store Information</div>
+            <?php foreach ([['Store Name','text','IT Shop.LK'],['Contact Email','email','info@itshop.lk'],['WhatsApp Number','tel','+94 77 000 0000'],['Currency Symbol','text','LKR']] as $sf): ?>
+            <div class="sc-row"><div class="sc-i"><strong><?= $sf[0] ?></strong></div><input type="<?= $sf[1] ?>" class="f-input" value="<?= $sf[2] ?>"></div>
             <?php endforeach; ?>
         </div>
-
-        <div class="sc">
-            <div class="sc-hdr"><i class="fas fa-sliders"></i> Features & Visibility</div>
-            <?php $toggles=[
-                ['Maintenance Mode',          'Take the store offline for visitors',       false],
-                ['Show Out-of-Stock Products','Display items with stock_count = 0',         true],
-                ['WhatsApp Floating Button',  'Show chat button on public pages',           true],
-                ['Customer Reviews',          'Allow buyers to leave product reviews',      false],
-                ['Price Range Filter',        'Show min/max filter on products.php',        true],
-                ['Low Stock Badge (≤5)',      'Show "Only X left" badge on product cards',  true],
-                ['Discount % Badge',          'Show discount badge when orig > price',      true],
-            ];
-            foreach ($toggles as $t): ?>
-            <div class="sc-row">
-                <div class="sc-i"><strong><?= $t[0] ?></strong><span><?= $t[1] ?></span></div>
-                <label class="toggle"><input type="checkbox" <?= $t[2]?'checked':'' ?>><span class="tgl-sl"></span></label>
-            </div>
-            <?php endforeach; ?>
+        <div class="sc"><div class="sc-hdr"><i class="fas fa-triangle-exclamation" style="color:#ef4444"></i> Danger Zone</div>
+            <div class="sc-row"><div class="sc-i"><strong style="color:#dc2626">Clear All Orders</strong><span>Permanently deletes every order record</span></div>
+            <form method="POST" onsubmit="return confirm('Delete ALL orders permanently?')"><input type="hidden" name="_action" value="clear_orders"><button type="submit" class="btn-p btn-red btn-sm"><i class="fas fa-trash"></i> Clear Orders</button></form></div>
         </div>
-
-        <div class="sc">
-            <div class="sc-hdr"><i class="fas fa-users-gear"></i> Admin Accounts</div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>Logged-in Account</strong><span><?= htmlspecialchars($admin_email) ?></span></div>
-                <span class="role-chip superadmin"><i class="fas fa-shield-halved"></i> Super Admin</span>
-            </div>
-            <div class="sc-row">
-                <div class="sc-i"><strong>New Password</strong><span>Leave blank to keep current</span></div>
-                <input type="password" class="f-input" placeholder="••••••••••">
-            </div>
-        </div>
-
-        <div class="sc">
-            <div class="sc-hdr" style="color:#dc2626"><i class="fas fa-triangle-exclamation" style="color:#ef4444"></i> Danger Zone</div>
-            <div class="sc-row">
-                <div class="sc-i"><strong style="color:#dc2626">Clear All Orders</strong><span>Permanently deletes every order record</span></div>
-                <form method="POST" onsubmit="return confirm('Delete ALL orders permanently?')">
-                    <input type="hidden" name="_action" value="clear_orders">
-                    <button type="submit" class="btn-p btn-red btn-sm"><i class="fas fa-trash"></i> Clear Orders</button>
-                </form>
-            </div>
-        </div>
-
         <?php endif; ?>
 
         <?php endif; /* end page switch */ ?>
@@ -2444,7 +2415,7 @@ $icon_options = [
 
 <!-- ══ ADD PRODUCT MODAL ══════════════════════════════════════════════ -->
 <div class="m-overlay" id="addProductModal">
-    <div class="modal">
+    <div class="modal" style="max-width:620px">
         <div class="m-hdr"><h3><i class="fas fa-plus" style="color:var(--accent);margin-right:6px"></i>Add New Product</h3><button class="m-close" onclick="closeModal('addProductModal')"><i class="fas fa-xmark"></i></button></div>
         <form method="POST" enctype="multipart/form-data" action="?page=products">
             <input type="hidden" name="_action" value="add_product">
@@ -2459,7 +2430,7 @@ $icon_options = [
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Product Name <span>*</span></label><input type="text" name="name" class="fc" required></div>
-                    <div class="fg"><label>Brand</label><input type="text" name="brand" class="fc"></div>
+                    <div class="fg"><label>Brand</label><input type="text" name="brand" class="fc" placeholder="e.g. Intel, Samsung, ASUS"></div>
                 </div>
                 <div class="fg">
                     <label>Category <span>*</span></label>
@@ -2467,75 +2438,137 @@ $icon_options = [
                     <div style="background:#fef9c3;border:1px solid #fde047;border-radius:var(--r-md);padding:9px 11px;font-size:.82rem;color:#854d0e"><i class="fas fa-triangle-exclamation"></i> No categories. <a href="?page=categories" style="color:inherit;font-weight:800">Create first →</a></div>
                     <input type="hidden" name="category" value="">
                     <?php else: ?>
-                    <select name="category" class="fc" required><option value="">— Select —</option><?php foreach ($cat_map as $slug=>$info): ?><option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option><?php endforeach; ?></select>
+                    <select name="category" class="fc" required><option value="">— Select category —</option><?php foreach ($cat_map as $slug=>$info): ?><option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option><?php endforeach; ?></select>
                     <?php endif; ?>
                 </div>
+                <!-- 2ND CATEGORY -->
+                <div class="fg">
+                    <label>2nd Category <small style="font-weight:500;color:var(--ink-muted)">(featured placement)</small></label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:5px" id="addSecondCatGroup">
+                        <?php foreach (['' => 'None', 'limited_deals' => '🔥 Limited-Time Deals', 'best_selling' => '⭐ Best Selling Products'] as $scVal => $scLabel): ?>
+                        <label class="sc-radio-lbl" style="display:flex;align-items:center;gap:7px;padding:8px 15px;background:var(--surface);border-radius:var(--r-md);border:1.5px solid rgba(10,10,15,.1);cursor:pointer;font-size:.84rem;font-weight:600;color:var(--ink-soft)">
+                            <input type="radio" name="second_category" value="<?= $scVal ?>" <?= $scVal===''?'checked':'' ?> style="display:none" onchange="syncSecondCatStyles('addSecondCatGroup')">
+                            <span class="sc-dot" style="width:13px;height:13px;border-radius:50%;border:2px solid rgba(10,10,15,.2);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s"></span>
+                            <?= $scLabel ?>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="f-hint">Pin this product to the featured section on the Products page dashboard</div>
+                </div>
                 <div class="f-row">
-                    <div class="fg"><label>Price (LKR) <span>*</span></label><input type="number" name="price" class="fc" min="0" step="0.01" required></div>
-                    <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" class="fc" min="0" step="0.01"></div>
+                    <div class="fg">
+                        <label>Price (LKR) <span>*</span></label>
+                        <input type="number" name="price" class="fc" min="0" step="0.01" required placeholder="0.00">
+                    </div>
+                    <div class="fg">
+                        <label>Discount Price <small style="font-weight:500;color:var(--ink-muted)">(original/MRP)</small></label>
+                        <input type="number" name="original_price" class="fc" min="0" step="0.01" placeholder="Leave blank if no discount">
+                        <div class="f-hint">Set higher than Price to show a strikethrough discount</div>
+                    </div>
                 </div>
                 <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" class="fc" value="0" min="0"></div>
-                <div class="fg"><label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label><textarea name="specs" class="fc"></textarea></div>
+                <div class="fg">
+                    <label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label>
+                    <textarea name="specs" class="fc" rows="5" placeholder="e.g.&#10;Intel Core i7-13700H&#10;16GB DDR5 RAM&#10;512GB NVMe SSD&#10;NVIDIA RTX 4060 8GB&#10;15.6&quot; FHD 144Hz Display"></textarea>
+                </div>
             </div>
-            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save</button></div>
+            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Product</button></div>
         </form>
     </div>
 </div>
 
 <!-- ══ EDIT PRODUCT MODAL ═══════════════════════════════════════════ -->
 <div class="m-overlay" id="editProductModal">
-    <div class="modal">
-        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Product</h3><button class="m-close" onclick="closeModal('editProductModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:620px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Product</h3>
+            <button class="m-close" onclick="closeModal('editProductModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" enctype="multipart/form-data" action="?page=products">
             <input type="hidden" name="_action" value="edit_product">
-            <input type="hidden" name="product_id" id="editProdId">
-            <input type="hidden" name="existing_image" id="editProdExistingImage">
+            <input type="hidden" name="product_id" id="editProductId">
             <div class="m-body">
                 <div class="fg">
                     <label>Product Image</label>
-                    <div class="img-prev" id="editImgPrev"><div class="iph" id="editImgPh"><i class="fas fa-image"></i></div><img id="editImgPrevImg" src="" style="display:none"></div>
+                    <div class="img-prev" id="editImgPrev"><div class="iph"><i class="fas fa-image"></i></div><img id="editImgPrevImg" src=""></div>
                     <div class="f-row">
-                        <div><input type="file" name="image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFileEdit(this)"></div>
-                        <div><input type="text" name="image_url" id="editProdImageUrl" class="fc" placeholder="…or paste URL" oninput="prvUrlEdit(this.value)"></div>
+                        <div><input type="file" name="image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFileEdit(this)"><div class="f-hint">Upload JPG/PNG/WebP</div></div>
+                        <div><input type="text" name="image_url" id="editImageUrl" class="fc" placeholder="…or paste image/path URL" oninput="prvUrlEdit(this.value)"></div>
                     </div>
+                    <input type="hidden" name="existing_image" id="editExistingImage">
                 </div>
                 <div class="f-row">
-                    <div class="fg"><label>Name <span>*</span></label><input type="text" name="name" id="editProdName" class="fc" required></div>
-                    <div class="fg"><label>Brand</label><input type="text" name="brand" id="editProdBrand" class="fc"></div>
+                    <div class="fg"><label>Product Name <span>*</span></label><input type="text" name="name" id="editProductName" class="fc" required></div>
+                    <div class="fg"><label>Brand</label><input type="text" name="brand" id="editProductBrand" class="fc"></div>
                 </div>
                 <div class="fg">
                     <label>Category <span>*</span></label>
-                    <select name="category" id="editProdCategory" class="fc" required><option value="">— Select —</option><?php foreach ($cat_map as $slug=>$info): ?><option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option><?php endforeach; ?></select>
+                    <?php if (empty($cat_map)): ?>
+                    <div style="background:#fef9c3;border:1px solid #fde047;border-radius:var(--r-md);padding:9px 11px;font-size:.82rem;color:#854d0e"><i class="fas fa-triangle-exclamation"></i> No categories. <a href="?page=categories" style="color:inherit;font-weight:800">Create first →</a></div>
+                    <input type="hidden" name="category" value="">
+                    <?php else: ?>
+                    <select name="category" id="editProductCategory" class="fc" required>
+                        <option value="">— Select category —</option>
+                        <?php foreach ($cat_map as $slug => $info): ?>
+                        <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php endif; ?>
+                </div>
+                <!-- 2ND CATEGORY -->
+                <div class="fg">
+                    <label>2nd Category <small style="font-weight:500;color:var(--ink-muted)">(featured placement)</small></label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:5px" id="editSecondCatGroup">
+                        <?php foreach (['' => 'None', 'limited_deals' => '🔥 Limited-Time Deals', 'best_selling' => '⭐ Best Selling Products'] as $scVal => $scLabel): ?>
+                        <label class="sc-radio-lbl" style="display:flex;align-items:center;gap:7px;padding:8px 15px;background:var(--surface);border-radius:var(--r-md);border:1.5px solid rgba(10,10,15,.1);cursor:pointer;font-size:.84rem;font-weight:600;color:var(--ink-soft)">
+                            <input type="radio" name="second_category" value="<?= $scVal ?>" <?= $scVal===''?'checked':'' ?> style="display:none" onchange="syncSecondCatStyles('editSecondCatGroup')">
+                            <span class="sc-dot" style="width:13px;height:13px;border-radius:50%;border:2px solid rgba(10,10,15,.2);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s"></span>
+                            <?= $scLabel ?>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
                 <div class="f-row">
-                    <div class="fg"><label>Price (LKR) <span>*</span></label><input type="number" name="price" id="editProdPrice" class="fc" min="0" step="0.01" required></div>
-                    <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" id="editProdOrigPrice" class="fc" min="0" step="0.01"></div>
+                    <div class="fg">
+                        <label>Price (LKR) <span>*</span></label>
+                        <input type="number" name="price" id="editProductPrice" class="fc" min="0" step="0.01" required>
+                    </div>
+                    <div class="fg">
+                        <label>Discount Price <small style="font-weight:500;color:var(--ink-muted)">(original/MRP)</small></label>
+                        <input type="number" name="original_price" id="editProductOrigPrice" class="fc" min="0" step="0.01" placeholder="Leave blank if no discount">
+                        <div class="f-hint">Set higher than Price to show a strikethrough discount</div>
+                    </div>
                 </div>
-                <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" id="editProdStock" class="fc" min="0"></div>
-                <div class="fg"><label>Specs</label><textarea name="specs" id="editProdSpecs" class="fc" rows="5"></textarea></div>
+                <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" id="editProductStock" class="fc" min="0"></div>
+                <div class="fg">
+                    <label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label>
+                    <textarea name="specs" id="editProductSpecs" class="fc" rows="5" placeholder="e.g.&#10;Intel Core i7-13700H&#10;16GB DDR5 RAM&#10;512GB NVMe SSD"></textarea>
+                </div>
             </div>
-            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('editProductModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Product</button>
+            </div>
         </form>
     </div>
 </div>
 
-<!-- ══ ADD CATEGORY MODAL ═══════════════════════════════════════════ -->
+
+<!-- ══ ADD CATEGORY MODAL ════════════════════════════════════════════ -->
 <div class="m-overlay" id="addCatModal">
-    <div class="modal">
-        <div class="m-hdr"><h3><i class="fas fa-layer-group" style="color:var(--accent);margin-right:6px"></i>Add Category</h3><button class="m-close" onclick="closeModal('addCatModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:500px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-layer-group" style="color:var(--accent);margin-right:6px"></i>Add Category</h3>
+            <button class="m-close" onclick="closeModal('addCatModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" action="?page=categories">
             <input type="hidden" name="_action" value="add_category">
             <div class="m-body">
-                <div class="f-row">
-                    <div class="fg"><label>Name <span>*</span></label><input type="text" name="cat_name" id="addCatName" class="fc" required oninput="autoSlug(this,'addCatSlug')"></div>
-                    <div class="fg"><label>Slug</label><input type="text" name="cat_slug" id="addCatSlug" class="fc"><div class="f-hint">Used as products.category FK</div></div>
-                </div>
-                <div class="fg"><label>Description</label><textarea name="cat_desc" class="fc"></textarea></div>
                 <div class="fg">
                     <label>Icon</label>
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
                         <div class="icon-preview" id="addIconPreview"><i class="fas fa-tag" id="addIconPreviewI"></i></div>
-                        <input type="text" name="cat_icon" id="addCatIcon" class="fc" value="fa-tag" oninput="updateIconPreview('add')">
+                        <input type="text" name="cat_icon" id="addCatIcon" class="fc" value="fa-tag" style="flex:1" oninput="updateIconPreview('add',this.value)" placeholder="fa-tag">
                     </div>
                     <div class="icon-grid" id="addIconGrid">
                         <?php foreach ($icon_options as $ico): ?>
@@ -2543,31 +2576,38 @@ $icon_options = [
                         <?php endforeach; ?>
                     </div>
                 </div>
+                <div class="f-row">
+                    <div class="fg"><label>Category Name <span>*</span></label><input type="text" name="cat_name" class="fc" required placeholder="e.g. Laptops" oninput="autoSlug(this,'addCatSlug')"></div>
+                    <div class="fg"><label>Slug <span>*</span></label><input type="text" name="cat_slug" id="addCatSlug" class="fc" required placeholder="e.g. laptops"><div class="f-hint">Used as FK in products.category</div></div>
+                </div>
+                <div class="fg"><label>Description</label><textarea name="cat_desc" class="fc" rows="2" placeholder="Optional short description"></textarea></div>
             </div>
-            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addCatModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save</button></div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('addCatModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Category</button>
+            </div>
         </form>
     </div>
 </div>
 
-<!-- ══ EDIT CATEGORY MODAL ══════════════════════════════════════════ -->
+
+<!-- ══ EDIT CATEGORY MODAL ═══════════════════════════════════════════ -->
 <div class="m-overlay" id="editCatModal">
-    <div class="modal">
-        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Category</h3><button class="m-close" onclick="closeModal('editCatModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:500px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Category</h3>
+            <button class="m-close" onclick="closeModal('editCatModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" action="?page=categories">
             <input type="hidden" name="_action" value="edit_category">
-            <input type="hidden" name="cat_id" id="editCatId">
-            <input type="hidden" name="old_slug" id="editOldSlug">
+            <input type="hidden" name="cat_id"   id="editCatId">
+            <input type="hidden" name="old_slug" id="editCatOldSlug">
             <div class="m-body">
-                <div class="f-row">
-                    <div class="fg"><label>Name <span>*</span></label><input type="text" name="cat_name" id="editCatName" class="fc" required></div>
-                    <div class="fg"><label>Slug</label><input type="text" name="cat_slug" id="editCatSlug" class="fc"><div class="f-hint">⚠ Changing slug renames in products too</div></div>
-                </div>
-                <div class="fg"><label>Description</label><textarea name="cat_desc" id="editCatDesc" class="fc"></textarea></div>
                 <div class="fg">
                     <label>Icon</label>
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
                         <div class="icon-preview" id="editIconPreview"><i class="fas fa-tag" id="editIconPreviewI"></i></div>
-                        <input type="text" name="cat_icon" id="editCatIcon" class="fc" oninput="updateIconPreview('edit')">
+                        <input type="text" name="cat_icon" id="editCatIcon" class="fc" value="fa-tag" style="flex:1" oninput="updateIconPreview('edit',this.value)" placeholder="fa-tag">
                     </div>
                     <div class="icon-grid" id="editIconGrid">
                         <?php foreach ($icon_options as $ico): ?>
@@ -2575,158 +2615,221 @@ $icon_options = [
                         <?php endforeach; ?>
                     </div>
                 </div>
+                <div class="f-row">
+                    <div class="fg"><label>Category Name <span>*</span></label><input type="text" name="cat_name" id="editCatName" class="fc" required></div>
+                    <div class="fg"><label>Slug <span>*</span></label><input type="text" name="cat_slug" id="editCatSlug" class="fc" required><div class="f-hint">Changing slug re-maps all products</div></div>
+                </div>
+                <div class="fg"><label>Description</label><textarea name="cat_desc" id="editCatDesc" class="fc" rows="2"></textarea></div>
             </div>
-            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editCatModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('editCatModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Category</button>
+            </div>
         </form>
     </div>
 </div>
 
-<!-- ══ DELETE CATEGORY MODAL ════════════════════════════════════════ -->
+
+<!-- ══ DELETE CATEGORY MODAL ═════════════════════════════════════════ -->
 <div class="m-overlay" id="deleteCatModal">
-    <div class="modal" style="max-width:440px">
-        <div class="m-hdr"><h3><i class="fas fa-trash" style="color:#ef4444;margin-right:6px"></i>Delete Category</h3><button class="m-close" onclick="closeModal('deleteCatModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:420px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-trash" style="color:#ef4444;margin-right:6px"></i>Delete Category</h3>
+            <button class="m-close" onclick="closeModal('deleteCatModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" action="?page=categories">
             <input type="hidden" name="_action" value="delete_category">
-            <input type="hidden" name="cat_id" id="delCatId">
-            <input type="hidden" name="cat_slug" id="delCatSlug">
+            <input type="hidden" name="cat_id"   id="deleteCatId">
+            <input type="hidden" name="cat_slug" id="deleteCatSlug">
             <div class="m-body">
-                <p id="delCatMsg" style="font-size:.87rem;color:var(--ink-soft);margin-bottom:1rem"></p>
-                <div class="fg" id="delReassignWrap" style="display:none">
-                    <label>Reassign products to:</label>
-                    <select name="reassign_slug" class="fc"><option value="">— Remove category —</option><?php foreach ($db_categories as $cat): ?><option value="<?= htmlspecialchars($cat['slug']??slugify($cat['name'])) ?>"><?= htmlspecialchars($cat['name']) ?></option><?php endforeach; ?></select>
+                <p style="font-size:.88rem;color:var(--ink-soft);margin-bottom:1rem">
+                    Delete category <strong id="deleteCatNameDisplay"></strong>?
+                    <span id="deleteCatCountMsg" style="color:#f59e0b;font-weight:700"></span>
+                </p>
+                <div class="fg" id="deleteCatReassignWrap">
+                    <label>Reassign products to</label>
+                    <select name="reassign_slug" class="fc">
+                        <option value="">— Leave uncategorised —</option>
+                        <?php foreach ($cat_map as $slug => $info): ?>
+                        <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
             </div>
-            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('deleteCatModal')">Cancel</button><button type="submit" class="btn-p btn-red"><i class="fas fa-trash"></i> Delete</button></div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('deleteCatModal')">Cancel</button>
+                <button type="submit" class="btn-p btn-red"><i class="fas fa-trash"></i> Delete</button>
+            </div>
         </form>
     </div>
 </div>
 
-<!-- ══ ADD TICKER MODAL ═════════════════════════════════════════════ -->
+
+<!-- ══ ADD TICKER MODAL ══════════════════════════════════════════════ -->
 <div class="m-overlay" id="addTickerModal">
-    <div class="modal" style="max-width:540px">
-        <div class="m-hdr"><h3><i class="fas fa-bullhorn" style="color:var(--accent);margin-right:6px"></i>Add Ticker Message</h3><button class="m-close" onclick="closeModal('addTickerModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:500px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-bullhorn" style="color:var(--accent);margin-right:6px"></i>Add Ticker Message</h3>
+            <button class="m-close" onclick="closeModal('addTickerModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" action="?page=ticker">
             <input type="hidden" name="_action" value="add_ticker">
             <div class="m-body">
                 <div class="fg">
-                    <label>Emoji</label>
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <input type="text" name="ticker_emoji" id="addTickerEmoji" class="fc" style="width:80px;font-size:1.2rem;text-align:center" maxlength="4">
-                        <div><?php foreach (['🔥','💻','🖥️','⚡','🛡️','🎧','📦','🎁','💡','🚀','🛒','✅','🆕','🎮','📢'] as $em): ?><span class="quick-emoji" onclick="document.getElementById('addTickerEmoji').value='<?= $em ?>'"><?= $em ?></span><?php endforeach; ?></div>
+                    <label>Emoji <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="text" name="ticker_emoji" id="addTickerEmoji" class="fc" style="width:70px;text-align:center;font-size:1.3rem" maxlength="4" placeholder="🎁">
+                        <div style="display:flex;gap:3px;flex-wrap:wrap">
+                            <?php foreach (['🎁','🔥','⚡','🏷️','💥','🛍️','📢','🌟','🆕','💯'] as $em): ?>
+                            <span class="quick-emoji" onclick="document.getElementById('addTickerEmoji').value='<?= $em ?>'"><?= $em ?></span>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
                 </div>
-                <div class="fg"><label>Message <span>*</span></label><textarea name="ticker_message" class="fc" rows="2" required></textarea></div>
+                <div class="fg"><label>Message <span>*</span></label><input type="text" name="ticker_message" class="fc" required placeholder="e.g. Free delivery on orders over LKR 5000!"></div>
                 <div class="f-row">
-                    <div class="fg"><label>Link URL</label><input type="text" name="ticker_link_url" class="fc"></div>
-                    <div class="fg"><label>Link Text</label><input type="text" name="ticker_link_text" class="fc"></div>
+                    <div class="fg"><label>Link URL</label><input type="url" name="ticker_link_url" class="fc" placeholder="https://…"></div>
+                    <div class="fg"><label>Link Text</label><input type="text" name="ticker_link_text" class="fc" placeholder="Shop Now"></div>
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="ticker_order" class="fc" value="0" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="ticker_active" checked><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
+                    <div class="fg" style="display:flex;align-items:center;gap:10px;padding-top:1.4rem">
+                        <label class="toggle"><input type="checkbox" name="ticker_active" checked><span class="tgl-sl"></span></label>
+                        <span style="font-size:.85rem;font-weight:600;color:var(--ink-soft)">Active</span>
+                    </div>
                 </div>
             </div>
-            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addTickerModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Message</button></div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('addTickerModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Message</button>
+            </div>
         </form>
     </div>
 </div>
 
-<!-- ══ EDIT TICKER MODAL ════════════════════════════════════════════ -->
+
+<!-- ══ EDIT TICKER MODAL ═════════════════════════════════════════════ -->
 <div class="m-overlay" id="editTickerModal">
-    <div class="modal" style="max-width:540px">
-        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Ticker Message</h3><button class="m-close" onclick="closeModal('editTickerModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:500px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Ticker Message</h3>
+            <button class="m-close" onclick="closeModal('editTickerModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" action="?page=ticker">
-            <input type="hidden" name="_action" value="edit_ticker">
+            <input type="hidden" name="_action"   value="edit_ticker">
             <input type="hidden" name="ticker_id" id="editTickerId">
             <div class="m-body">
                 <div class="fg">
                     <label>Emoji</label>
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <input type="text" name="ticker_emoji" id="editTickerEmoji" class="fc" style="width:80px;font-size:1.2rem;text-align:center" maxlength="4">
-                        <div><?php foreach (['🔥','💻','🖥️','⚡','🛡️','🎧','📦','🎁','💡','🚀','🛒','✅','🆕','🎮','📢'] as $em): ?><span class="quick-emoji" onclick="document.getElementById('editTickerEmoji').value='<?= $em ?>'"><?= $em ?></span><?php endforeach; ?></div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="text" name="ticker_emoji" id="editTickerEmoji" class="fc" style="width:70px;text-align:center;font-size:1.3rem" maxlength="4">
+                        <div style="display:flex;gap:3px;flex-wrap:wrap">
+                            <?php foreach (['🎁','🔥','⚡','🏷️','💥','🛍️','📢','🌟','🆕','💯'] as $em): ?>
+                            <span class="quick-emoji" onclick="document.getElementById('editTickerEmoji').value='<?= $em ?>'"><?= $em ?></span>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
                 </div>
-                <div class="fg"><label>Message <span>*</span></label><textarea name="ticker_message" id="editTickerMessage" class="fc" rows="2" required></textarea></div>
+                <div class="fg"><label>Message <span>*</span></label><input type="text" name="ticker_message" id="editTickerMessage" class="fc" required></div>
                 <div class="f-row">
-                    <div class="fg"><label>Link URL</label><input type="text" name="ticker_link_url" id="editTickerLinkUrl" class="fc"></div>
+                    <div class="fg"><label>Link URL</label><input type="url" name="ticker_link_url" id="editTickerLinkUrl" class="fc"></div>
                     <div class="fg"><label>Link Text</label><input type="text" name="ticker_link_text" id="editTickerLinkText" class="fc"></div>
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="ticker_order" id="editTickerOrder" class="fc" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label><div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)"><label class="toggle" style="margin:0"><input type="checkbox" name="ticker_active" id="editTickerActive"><span class="tgl-sl"></span></label><strong style="font-size:.84rem;color:var(--ink)">Active</strong></div></div>
+                    <div class="fg" style="display:flex;align-items:center;gap:10px;padding-top:1.4rem">
+                        <label class="toggle"><input type="checkbox" name="ticker_active" id="editTickerActive"><span class="tgl-sl"></span></label>
+                        <span style="font-size:.85rem;font-weight:600;color:var(--ink-soft)">Active</span>
+                    </div>
                 </div>
             </div>
-            <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editTickerModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
+            <div class="m-foot">
+                <button type="button" class="btn-o" onclick="closeModal('editTickerModal')">Cancel</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update Message</button>
+            </div>
         </form>
     </div>
 </div>
 
+
 <!-- ══ ADD HERO SLIDE MODAL ══════════════════════════════════════════ -->
 <div class="m-overlay" id="addHeroSlideModal">
-    <div class="modal" style="max-width:600px">
-        <div class="m-hdr"><h3><i class="fas fa-panorama" style="color:var(--accent);margin-right:6px"></i>Add Hero Slide</h3><button class="m-close" onclick="closeModal('addHeroSlideModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:580px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-panorama" style="color:var(--accent);margin-right:6px"></i>Add Hero Slide</h3>
+            <button class="m-close" onclick="closeModal('addHeroSlideModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" enctype="multipart/form-data" action="?page=media&tab=hero_slides">
             <input type="hidden" name="_action" value="add_hero_slide">
             <div class="m-body">
                 <div class="fg">
                     <label>Slide Image</label>
-                    <div class="img-prev" id="addSlideImgPrev" style="height:120px"><div class="iph"><i class="fas fa-panorama"></i></div><img id="addSlideImgPrevImg" src=""></div>
+                    <div class="img-prev" id="heroImgPrev"><div class="iph"><i class="fas fa-panorama"></i></div><img id="heroImgPrevImg" src=""></div>
                     <div class="f-row">
-                        <div><input type="file" name="slide_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'addSlideImgPrevImg','addSlideImgPrev')"></div>
-                        <div><input type="text" name="slide_image_url" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'addSlideImgPrevImg','addSlideImgPrev')"></div>
+                        <div><input type="file" name="slide_image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFileHero(this)"></div>
+                        <div><input type="text" name="slide_image_url" class="fc" placeholder="…or paste URL" oninput="prvUrlHero(this.value)"></div>
                     </div>
-                    <div class="f-hint">Recommended: 1440×600px or wider, JPG/WebP</div>
                 </div>
                 <div class="f-row">
-                    <div class="fg"><label>Title</label><input type="text" name="slide_title" class="fc" placeholder="e.g. Premium Laptops"></div>
-                    <div class="fg"><label>Subtitle</label><input type="text" name="slide_subtitle" class="fc" placeholder="e.g. From LKR 199,000"></div>
+                    <div class="fg"><label>Title</label><input type="text" name="slide_title" class="fc" placeholder="e.g. Next-Gen Laptops"></div>
+                    <div class="fg"><label>Subtitle</label><input type="text" name="slide_subtitle" class="fc" placeholder="e.g. Starting from LKR 89,900"></div>
                 </div>
-                <div class="fg"><label>Link URL</label><input type="text" name="slide_link" class="fc" placeholder="https://… or products.php?cat=laptops"></div>
+                <div class="fg"><label>Link URL</label><input type="text" name="slide_link" class="fc" placeholder="/products.php?cat=laptops"></div>
                 <div class="f-row">
-                    <div class="fg"><label>Primary Button Text</label><input type="text" name="slide_btn" class="fc" value="Shop Now"></div>
+                    <div class="fg"><label>Button Text</label><input type="text" name="slide_btn" class="fc" value="Shop Now"></div>
                     <div class="fg"><label>Ghost Button Text</label><input type="text" name="slide_ghost_btn" class="fc" value="View All"></div>
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="slide_order" class="fc" value="0" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" checked><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
+                    <div class="fg" style="display:flex;align-items:center;gap:10px;padding-top:1.4rem">
+                        <label class="toggle"><input type="checkbox" name="slide_active" checked><span class="tgl-sl"></span></label>
+                        <span style="font-size:.85rem;font-weight:600;color:var(--ink-soft)">Active</span>
                     </div>
                 </div>
             </div>
             <div class="m-foot">
                 <button type="button" class="btn-o" onclick="closeModal('addHeroSlideModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Slide</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Slide</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- ══ EDIT HERO SLIDE MODAL ════════════════════════════════════════ -->
+
+<!-- ══ EDIT HERO SLIDE MODAL ═════════════════════════════════════════ -->
 <div class="m-overlay" id="editHeroSlideModal">
-    <div class="modal" style="max-width:600px">
-        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Hero Slide</h3><button class="m-close" onclick="closeModal('editHeroSlideModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:580px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Hero Slide</h3>
+            <button class="m-close" onclick="closeModal('editHeroSlideModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" enctype="multipart/form-data" action="?page=media&tab=hero_slides">
-            <input type="hidden" name="_action" value="edit_hero_slide">
+            <input type="hidden" name="_action"  value="edit_hero_slide">
             <input type="hidden" name="slide_id" id="editSlideId">
-            <input type="hidden" name="existing_slide_image" id="editSlideExistingImage">
             <div class="m-body">
                 <div class="fg">
                     <label>Slide Image</label>
-                    <div class="img-prev" id="editSlideImgPrev" style="height:120px"><div class="iph" id="editSlideImgPh"><i class="fas fa-panorama"></i></div><img id="editSlideImgPrevImg" src="" style="display:none"></div>
+                    <div class="img-prev" id="editHeroImgPrev"><div class="iph"><i class="fas fa-panorama"></i></div><img id="editHeroImgPrevImg" src=""></div>
                     <div class="f-row">
-                        <div><input type="file" name="slide_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'editSlideImgPrevImg','editSlideImgPrev')"></div>
-                        <div><input type="text" name="slide_image_url" id="editSlideImageUrl" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'editSlideImgPrevImg','editSlideImgPrev')"></div>
+                        <div><input type="file" name="slide_image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFileHeroEdit(this)"></div>
+                        <div><input type="text" name="slide_image_url" id="editSlideImageUrl" class="fc" placeholder="…or paste URL" oninput="prvUrlHeroEdit(this.value)"></div>
                     </div>
+                    <input type="hidden" name="existing_slide_image" id="editExistingSlideImage">
+                </div>
+                <div class="f-row">
+                    <div class="fg"><label>Title</label><input type="text" name="slide_title" id="editSlideTitle" class="fc"></div>
+                    <div class="fg"><label>Subtitle</label><input type="text" name="slide_subtitle" id="editSlideSubtitle" class="fc"></div>
+                </div>
+                <div class="fg"><label>Link URL</label><input type="text" name="slide_link" id="editSlideLink" class="fc"></div>
+                <div class="f-row">
+                    <div class="fg"><label>Button Text</label><input type="text" name="slide_btn" id="editSlideBtn" class="fc"></div>
+                    <div class="fg"><label>Ghost Button Text</label><input type="text" name="slide_ghost_btn" id="editSlideGhostBtn" class="fc"></div>
                 </div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="slide_order" id="editSlideOrder" class="fc" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="slide_active" id="editSlideActive"><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
+                    <div class="fg" style="display:flex;align-items:center;gap:10px;padding-top:1.4rem">
+                        <label class="toggle"><input type="checkbox" name="slide_active" id="editSlideActive"><span class="tgl-sl"></span></label>
+                        <span style="font-size:.85rem;font-weight:600;color:var(--ink-soft)">Active</span>
                     </div>
                 </div>
             </div>
@@ -2738,72 +2841,71 @@ $icon_options = [
     </div>
 </div>
 
-<!-- ══ ADD POPUP IMAGE MODAL ════════════════════════════════════════ -->
+
+<!-- ══ ADD POPUP IMAGE MODAL ═════════════════════════════════════════ -->
 <div class="m-overlay" id="addPopupImageModal">
-    <div class="modal" style="max-width:540px">
-        <div class="m-hdr"><h3><i class="fas fa-window-maximize" style="color:var(--accent);margin-right:6px"></i>Add Popup Image</h3><button class="m-close" onclick="closeModal('addPopupImageModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:500px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-window-maximize" style="color:var(--accent);margin-right:6px"></i>Add Popup Image</h3>
+            <button class="m-close" onclick="closeModal('addPopupImageModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" enctype="multipart/form-data" action="?page=media&tab=popup_images">
             <input type="hidden" name="_action" value="add_popup_image">
             <div class="m-body">
                 <div class="fg">
                     <label>Image <span>*</span></label>
-                    <div class="img-prev" id="addPopupImgPrev" style="height:140px"><div class="iph"><i class="fas fa-image"></i></div><img id="addPopupImgPrevImg" src=""></div>
+                    <div class="img-prev" id="popupImgPrev"><div class="iph"><i class="fas fa-image"></i></div><img id="popupImgPrevImg" src=""></div>
                     <div class="f-row">
-                        <div><input type="file" name="popup_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'addPopupImgPrevImg','addPopupImgPrev')"></div>
-                        <div><input type="text" name="popup_image_url" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'addPopupImgPrevImg','addPopupImgPrev')"></div>
+                        <div><input type="file" name="popup_image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFilePopup(this)"></div>
+                        <div><input type="text" name="popup_image_url" class="fc" placeholder="…or paste URL" oninput="prvUrlPopup(this.value)"></div>
                     </div>
-                    <div class="f-hint">Recommended: 800×600px, JPG/PNG/WebP</div>
                 </div>
-                <div class="f-row">
-                    <div class="fg"><label>Alt Text</label><input type="text" name="popup_alt" class="fc" placeholder="Description of image"></div>
-                    <div class="fg"><label>Link URL</label><input type="text" name="popup_link" class="fc" placeholder="https://…"></div>
-                </div>
+                <div class="fg"><label>Alt Text / Label</label><input type="text" name="popup_alt" class="fc" placeholder="e.g. Summer Sale Banner"></div>
+                <div class="fg"><label>Link URL</label><input type="url" name="popup_link" class="fc" placeholder="https://…"></div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="popup_order" class="fc" value="0" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" checked><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
+                    <div class="fg" style="display:flex;align-items:center;gap:10px;padding-top:1.4rem">
+                        <label class="toggle"><input type="checkbox" name="popup_active" checked><span class="tgl-sl"></span></label>
+                        <span style="font-size:.85rem;font-weight:600;color:var(--ink-soft)">Active</span>
                     </div>
                 </div>
             </div>
             <div class="m-foot">
                 <button type="button" class="btn-o" onclick="closeModal('addPopupImageModal')">Cancel</button>
-                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Add Image</button>
+                <button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save Image</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- ══ EDIT POPUP IMAGE MODAL ═══════════════════════════════════════ -->
+
+<!-- ══ EDIT POPUP IMAGE MODAL ════════════════════════════════════════ -->
 <div class="m-overlay" id="editPopupImageModal">
-    <div class="modal" style="max-width:540px">
-        <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Popup Image</h3><button class="m-close" onclick="closeModal('editPopupImageModal')"><i class="fas fa-xmark"></i></button></div>
+    <div class="modal" style="max-width:500px">
+        <div class="m-hdr">
+            <h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Popup Image</h3>
+            <button class="m-close" onclick="closeModal('editPopupImageModal')"><i class="fas fa-xmark"></i></button>
+        </div>
         <form method="POST" enctype="multipart/form-data" action="?page=media&tab=popup_images">
-            <input type="hidden" name="_action" value="edit_popup_image">
+            <input type="hidden" name="_action"  value="edit_popup_image">
             <input type="hidden" name="popup_id" id="editPopupId">
-            <input type="hidden" name="existing_popup_image" id="editPopupExistingImage">
             <div class="m-body">
                 <div class="fg">
                     <label>Image</label>
-                    <div class="img-prev" id="editPopupImgPrev" style="height:140px"><div class="iph" id="editPopupImgPh"><i class="fas fa-image"></i></div><img id="editPopupImgPrevImg" src="" style="display:none"></div>
+                    <div class="img-prev" id="editPopupImgPrev"><div class="iph"><i class="fas fa-image"></i></div><img id="editPopupImgPrevImg" src=""></div>
                     <div class="f-row">
-                        <div><input type="file" name="popup_image_file" accept="image/*" class="fc" style="padding:5px" onchange="adPrvFile(this,'editPopupImgPrevImg','editPopupImgPrev')"></div>
-                        <div><input type="text" name="popup_image_url" id="editPopupImageUrl" class="fc" placeholder="…or paste URL/path" oninput="adPrvUrl(this.value,'editPopupImgPrevImg','editPopupImgPrev')"></div>
+                        <div><input type="file" name="popup_image_file" accept="image/*" class="fc" style="padding:5px" onchange="prvFilePopupEdit(this)"></div>
+                        <div><input type="text" name="popup_image_url" id="editPopupImageUrl" class="fc" placeholder="…or paste URL" oninput="prvUrlPopupEdit(this.value)"></div>
                     </div>
+                    <input type="hidden" name="existing_popup_image" id="editExistingPopupImage">
                 </div>
-                <div class="f-row">
-                    <div class="fg"><label>Alt Text</label><input type="text" name="popup_alt" id="editPopupAlt" class="fc"></div>
-                    <div class="fg"><label>Link URL</label><input type="text" name="popup_link" id="editPopupLink" class="fc"></div>
-                </div>
+                <div class="fg"><label>Alt Text / Label</label><input type="text" name="popup_alt" id="editPopupAlt" class="fc"></div>
+                <div class="fg"><label>Link URL</label><input type="url" name="popup_link" id="editPopupLink" class="fc"></div>
                 <div class="f-row">
                     <div class="fg"><label>Sort Order</label><input type="number" name="popup_order" id="editPopupOrder" class="fc" min="0"></div>
-                    <div class="fg"><label style="visibility:hidden">Active</label>
-                        <div style="display:flex;align-items:center;gap:10px;padding:.7rem 1rem;background:var(--surface);border-radius:var(--r-md)">
-                            <label class="toggle" style="margin:0"><input type="checkbox" name="popup_active" id="editPopupActive"><span class="tgl-sl"></span></label>
-                            <strong style="font-size:.84rem;color:var(--ink)">Active</strong>
-                        </div>
+                    <div class="fg" style="display:flex;align-items:center;gap:10px;padding-top:1.4rem">
+                        <label class="toggle"><input type="checkbox" name="popup_active" id="editPopupActive"><span class="tgl-sl"></span></label>
+                        <span style="font-size:.85rem;font-weight:600;color:var(--ink-soft)">Active</span>
                     </div>
                 </div>
             </div>
@@ -2816,188 +2918,186 @@ $icon_options = [
 </div>
 
 
-<!-- ══════════════════════════════════════════════════════════════════
-     JAVASCRIPT
-══════════════════════════════════════════════════════════════════════ -->
+<!-- ══ JAVASCRIPT ════════════════════════════════════════════════════ -->
 <script>
-// ── Modal helpers ─────────────────────────────────────────────────────────────
+// ── Modal helpers ─────────────────────────────────────────────────────
 function openModal(id)  { document.getElementById(id).classList.add('open');    document.body.style.overflow='hidden'; }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow=''; }
+document.querySelectorAll('.m-overlay').forEach(o => o.addEventListener('click', e => { if (e.target===o) closeModal(o.id); }));
+document.addEventListener('keydown', e => { if (e.key==='Escape') document.querySelectorAll('.m-overlay.open').forEach(o => closeModal(o.id)); });
 
-document.querySelectorAll('.m-overlay').forEach(ov => {
-    ov.addEventListener('click', e => { if (e.target === ov) closeModal(ov.id); });
-});
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-        document.querySelectorAll('.m-overlay.open').forEach(ov => closeModal(ov.id));
-    }
-});
-
-// ── Image preview helpers ─────────────────────────────────────────────────────
-function prvFile(input) {
-    if (!input.files[0]) return;
-    const r = new FileReader();
-    r.onload = e => showPrv('imgPrevImg','imgPrev', e.target.result);
-    r.readAsDataURL(input.files[0]);
-}
-function prvUrl(url) {
-    if (url) showPrv('imgPrevImg','imgPrev', '../' + url);
-    else     hidePrv('imgPrevImg','imgPrev');
-}
-function prvFileEdit(input) {
-    if (!input.files[0]) return;
-    const r = new FileReader();
-    r.onload = e => showPrv('editImgPrevImg','editImgPrev', e.target.result);
-    r.readAsDataURL(input.files[0]);
-}
-function prvUrlEdit(url) {
-    if (url) showPrv('editImgPrevImg','editImgPrev', '../' + url);
-    else {
-        const existing = document.getElementById('editProdExistingImage').value;
-        if (existing) showPrv('editImgPrevImg','editImgPrev', '../' + existing);
-        else hidePrv('editImgPrevImg','editImgPrev');
-    }
-}
-function adPrvFile(input, imgId, wrapId) {
-    if (!input.files[0]) return;
-    const r = new FileReader();
-    r.onload = e => showPrv(imgId, wrapId, e.target.result);
-    r.readAsDataURL(input.files[0]);
-}
-function adPrvUrl(url, imgId, wrapId) {
-    if (url) showPrv(imgId, wrapId, '../' + url);
-    else     hidePrv(imgId, wrapId);
-}
-function showPrv(imgId, wrapId, src) {
-    const img  = document.getElementById(imgId);
+// ── Image previews ────────────────────────────────────────────────────
+function showPrev(wrapId, imgId, src) {
     const wrap = document.getElementById(wrapId);
-    if (!img || !wrap) return;
-    img.src = src;
-    img.style.display = 'block';
-    const ph = wrap.querySelector('.iph');
-    if (ph) ph.style.display = 'none';
-}
-function hidePrv(imgId, wrapId) {
     const img  = document.getElementById(imgId);
-    const wrap = document.getElementById(wrapId);
-    if (!img || !wrap) return;
-    img.style.display = 'none';
-    const ph = wrap.querySelector('.iph');
-    if (ph) ph.style.display = '';
+    if (!wrap || !img) return;
+    if (src) { img.src = src; img.style.display='block'; const ph=wrap.querySelector('.iph'); if(ph) ph.style.display='none'; }
+    else      { img.style.display='none'; img.src=''; const ph=wrap.querySelector('.iph'); if(ph) ph.style.display=''; }
+}
+function prvFile(input)         { if(input.files[0]) showPrev('imgPrev','imgPrevImg',URL.createObjectURL(input.files[0])); }
+function prvUrl(v)              { showPrev('imgPrev','imgPrevImg', v ? '../'+v : ''); }
+function prvFileEdit(input)     { if(input.files[0]) showPrev('editImgPrev','editImgPrevImg',URL.createObjectURL(input.files[0])); }
+function prvUrlEdit(v)          { showPrev('editImgPrev','editImgPrevImg', v ? '../'+v : ''); }
+function prvFileHero(input)     { if(input.files[0]) showPrev('heroImgPrev','heroImgPrevImg',URL.createObjectURL(input.files[0])); }
+function prvUrlHero(v)          { showPrev('heroImgPrev','heroImgPrevImg', v ? '../'+v : ''); }
+function prvFileHeroEdit(input) { if(input.files[0]) showPrev('editHeroImgPrev','editHeroImgPrevImg',URL.createObjectURL(input.files[0])); }
+function prvUrlHeroEdit(v)      { showPrev('editHeroImgPrev','editHeroImgPrevImg', v ? '../'+v : ''); }
+function prvFilePopup(input)    { if(input.files[0]) showPrev('popupImgPrev','popupImgPrevImg',URL.createObjectURL(input.files[0])); }
+function prvUrlPopup(v)         { showPrev('popupImgPrev','popupImgPrevImg', v ? '../'+v : ''); }
+function prvFilePopupEdit(input){ if(input.files[0]) showPrev('editPopupImgPrev','editPopupImgPrevImg',URL.createObjectURL(input.files[0])); }
+function prvUrlPopupEdit(v)     { showPrev('editPopupImgPrev','editPopupImgPrevImg', v ? '../'+v : ''); }
+
+// ── Auto slug ─────────────────────────────────────────────────────────
+function autoSlug(nameInput, slugId) {
+    const s = document.getElementById(slugId);
+    if (!s) return;
+    s.value = nameInput.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 }
 
-// ── Edit Product Modal ────────────────────────────────────────────────────────
+// ── Icon picker ───────────────────────────────────────────────────────
+function selectIcon(prefix, iconClass) {
+    document.getElementById(prefix+'CatIcon').value = iconClass;
+    updateIconPreview(prefix, iconClass);
+    document.querySelectorAll('#'+prefix+'IconGrid .icon-opt').forEach(el => {
+        el.classList.toggle('selected', el.querySelector('i').className === 'fas '+iconClass);
+    });
+}
+function updateIconPreview(prefix, iconClass) {
+    const el = document.getElementById(prefix+'IconPreviewI');
+    if (el) el.className = 'fas ' + iconClass;
+}
+
+// ── Open edit product ─────────────────────────────────────────────────
 function openEditProduct(d) {
-    document.getElementById('editProdId').value          = d.id;
-    document.getElementById('editProdName').value        = d.name;
-    document.getElementById('editProdBrand').value       = d.brand || '';
-    document.getElementById('editProdCategory').value    = d.category;
-    document.getElementById('editProdPrice').value       = d.price;
-    document.getElementById('editProdOrigPrice').value   = d.original_price || '';
-    document.getElementById('editProdStock').value       = d.stock_count;
-    document.getElementById('editProdSpecs').value       = d.specs || '';
-    document.getElementById('editProdExistingImage').value = d.image || '';
-    document.getElementById('editProdImageUrl').value    = d.image || '';
-    if (d.image) showPrv('editImgPrevImg', 'editImgPrev', '../' + d.image);
-    else hidePrv('editImgPrevImg', 'editImgPrev');
+    document.getElementById('editProductId').value       = d.id;
+    document.getElementById('editProductName').value     = d.name;
+    document.getElementById('editProductBrand').value    = d.brand || '';
+    document.getElementById('editProductPrice').value    = d.price;
+    document.getElementById('editProductOrigPrice').value= d.original_price || '';
+    document.getElementById('editProductStock').value    = d.stock_count;
+    document.getElementById('editProductSpecs').value    = d.specs || '';
+    document.getElementById('editExistingImage').value   = d.image || '';
+
+    // Category select
+    const catSel = document.getElementById('editProductCategory');
+    if (catSel) { for (let o of catSel.options) { if (o.value === d.category) { o.selected=true; break; } } }
+
+    // Image preview
+    if (d.image) {
+        showPrev('editImgPrev','editImgPrevImg','../'+d.image);
+        document.getElementById('editImageUrl').value = d.image;
+    } else {
+        showPrev('editImgPrev','editImgPrevImg','');
+        document.getElementById('editImageUrl').value = '';
+    }
+
+    // 2nd category radio
+    const radios = document.querySelectorAll('#editSecondCatGroup input[type=radio]');
+    radios.forEach(r => { r.checked = (r.value === (d.second_category || '')); });
+    syncSecondCatStyles('editSecondCatGroup');
+
     openModal('editProductModal');
 }
 
-// ── Category helpers ──────────────────────────────────────────────────────────
-function slugify(text) {
-    return text.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-}
-function autoSlug(nameInput, slugId) {
-    document.getElementById(slugId).value = slugify(nameInput.value);
-}
-function selectIcon(prefix, icon) {
-    document.getElementById(prefix + 'CatIcon').value = icon;
-    document.querySelectorAll('#' + prefix + 'IconGrid .icon-opt').forEach(el => el.classList.remove('selected'));
-    const chosen = document.querySelector('#' + prefix + 'IconGrid [title="' + icon + '"]');
-    if (chosen) chosen.classList.add('selected');
-    updateIconPreview(prefix);
-}
-function updateIconPreview(prefix) {
-    const val = document.getElementById(prefix + 'CatIcon').value || 'fa-tag';
-    const el  = document.getElementById(prefix + 'IconPreviewI');
-    if (el) { el.className = 'fas ' + val; }
-}
+// ── Open edit category ────────────────────────────────────────────────
 function openEditCat(d) {
-    document.getElementById('editCatId').value   = d.id;
-    document.getElementById('editCatName').value = d.name;
-    document.getElementById('editCatSlug').value = d.slug;
-    document.getElementById('editOldSlug').value = d.slug;
-    document.getElementById('editCatDesc').value = d.desc || '';
-    document.getElementById('editCatIcon').value = d.icon || 'fa-tag';
-    updateIconPreview('edit');
+    document.getElementById('editCatId').value      = d.id;
+    document.getElementById('editCatName').value    = d.name;
+    document.getElementById('editCatSlug').value    = d.slug;
+    document.getElementById('editCatOldSlug').value = d.slug;
+    document.getElementById('editCatDesc').value    = d.desc || '';
+    const icon = d.icon || 'fa-tag';
+    document.getElementById('editCatIcon').value    = icon;
+    updateIconPreview('edit', icon);
     document.querySelectorAll('#editIconGrid .icon-opt').forEach(el => {
-        el.classList.toggle('selected', el.title === (d.icon || 'fa-tag'));
+        el.classList.toggle('selected', el.querySelector('i').className === 'fas '+icon);
     });
     openModal('editCatModal');
 }
+
+// ── Open delete category ──────────────────────────────────────────────
 function openDeleteCat(d) {
-    document.getElementById('delCatId').value   = d.id;
-    document.getElementById('delCatSlug').value = d.slug;
-    const msg  = document.getElementById('delCatMsg');
-    const wrap = document.getElementById('delReassignWrap');
-    if (d.cnt > 0) {
-        msg.innerHTML  = '<i class="fas fa-triangle-exclamation" style="color:#f59e0b;margin-right:5px"></i>'
-            + 'Category <strong>' + d.name + '</strong> has <strong>' + d.cnt + '</strong> product(s). '
-            + 'Choose where to move them:';
-        wrap.style.display = '';
-        document.querySelectorAll('#delReassignWrap select option').forEach(opt => {
-            opt.style.display = (opt.value === d.slug) ? 'none' : '';
-        });
-    } else {
-        msg.innerHTML  = 'Delete category <strong>' + d.name + '</strong>? This action cannot be undone.';
-        wrap.style.display = 'none';
+    document.getElementById('deleteCatId').value         = d.id;
+    document.getElementById('deleteCatSlug').value       = d.slug;
+    document.getElementById('deleteCatNameDisplay').textContent = '"' + d.name + '"';
+    const countMsg = document.getElementById('deleteCatCountMsg');
+    countMsg.textContent = d.cnt > 0 ? ' (' + d.cnt + ' product(s) will be affected)' : '';
+    // Remove the deleted cat from the reassign select
+    const sel = document.querySelector('#deleteCatReassignWrap select');
+    if (sel) {
+        for (let o of sel.options) { o.style.display = (o.value === d.slug) ? 'none' : ''; }
+        if (sel.value === d.slug) sel.value = '';
     }
     openModal('deleteCatModal');
 }
 
-// ── Ticker helpers ────────────────────────────────────────────────────────────
+// ── Open edit ticker ──────────────────────────────────────────────────
 function openEditTicker(d) {
     document.getElementById('editTickerId').value       = d.id;
     document.getElementById('editTickerMessage').value  = d.message;
-    document.getElementById('editTickerLinkUrl').value  = d.link_url  || '';
+    document.getElementById('editTickerEmoji').value    = d.emoji || '';
+    document.getElementById('editTickerLinkUrl').value  = d.link_url || '';
     document.getElementById('editTickerLinkText').value = d.link_text || '';
-    document.getElementById('editTickerEmoji').value    = d.emoji     || '';
     document.getElementById('editTickerOrder').value    = d.sort_order || 0;
-    document.getElementById('editTickerActive').checked = !!d.is_active;
+    document.getElementById('editTickerActive').checked = !!parseInt(d.is_active);
     openModal('editTickerModal');
 }
-function updateTickerPreviewColor(color) {
-    const bars = document.querySelectorAll('#livePreviewBar, #dashTickerBar');
-    bars.forEach(b => { if (b) b.style.background = color; });
-}
 
-// ── Hero Slide helpers ────────────────────────────────────────────────────────
+// ── Open edit hero slide ──────────────────────────────────────────────
 function openEditHeroSlide(d) {
-    document.getElementById('editSlideId').value             = d.id;
-    document.getElementById('editSlideOrder').value          = d.sort_order     || 0;
-    document.getElementById('editSlideActive').checked       = !!d.is_active;
-    document.getElementById('editSlideExistingImage').value  = d.image_url      || '';
-    document.getElementById('editSlideImageUrl').value       = d.image_url      || '';
-    if (d.image_url) showPrv('editSlideImgPrevImg', 'editSlideImgPrev', '../' + d.image_url);
-    else hidePrv('editSlideImgPrevImg', 'editSlideImgPrev');
+    document.getElementById('editSlideId').value            = d.id;
+    document.getElementById('editSlideTitle').value         = d.title || '';
+    document.getElementById('editSlideSubtitle').value      = d.subtitle || '';
+    document.getElementById('editSlideLink').value          = d.link_url || '';
+    document.getElementById('editSlideBtn').value           = d.btn_text || 'Shop Now';
+    document.getElementById('editSlideGhostBtn').value      = d.btn_ghost_text || 'View All';
+    document.getElementById('editSlideOrder').value         = d.sort_order || 0;
+    document.getElementById('editSlideActive').checked      = !!parseInt(d.is_active);
+    document.getElementById('editExistingSlideImage').value = d.image_url || '';
+    document.getElementById('editSlideImageUrl').value      = d.image_url || '';
+    if (d.image_url) showPrev('editHeroImgPrev','editHeroImgPrevImg','../'+d.image_url);
+    else             showPrev('editHeroImgPrev','editHeroImgPrevImg','');
     openModal('editHeroSlideModal');
 }
 
-// ── Popup Image helpers ───────────────────────────────────────────────────────
+// ── Open edit popup image ─────────────────────────────────────────────
 function openEditPopupImage(d) {
-    document.getElementById('editPopupId').value             = d.id;
-    document.getElementById('editPopupAlt').value            = d.alt_text   || '';
-    document.getElementById('editPopupLink').value           = d.link_url   || '';
-    document.getElementById('editPopupOrder').value          = d.sort_order || 0;
-    document.getElementById('editPopupActive').checked       = !!d.is_active;
-    document.getElementById('editPopupExistingImage').value  = d.image_src  || '';
-    document.getElementById('editPopupImageUrl').value       = d.image_src  || '';
-    if (d.image_src) showPrv('editPopupImgPrevImg', 'editPopupImgPrev', '../' + d.image_src);
-    else hidePrv('editPopupImgPrevImg', 'editPopupImgPrev');
+    document.getElementById('editPopupId').value              = d.id;
+    document.getElementById('editPopupAlt').value             = d.alt_text || '';
+    document.getElementById('editPopupLink').value            = d.link_url || '';
+    document.getElementById('editPopupOrder').value           = d.sort_order || 0;
+    document.getElementById('editPopupActive').checked        = !!parseInt(d.is_active);
+    document.getElementById('editExistingPopupImage').value   = d.image_src || '';
+    document.getElementById('editPopupImageUrl').value        = d.image_src || '';
+    if (d.image_src) showPrev('editPopupImgPrev','editPopupImgPrevImg','../'+d.image_src);
+    else             showPrev('editPopupImgPrev','editPopupImgPrevImg','');
     openModal('editPopupImageModal');
 }
 
-// ── Global search filter ──────────────────────────────────────────────────────
+// ── 2nd category radio pill styling ──────────────────────────────────
+function syncSecondCatStyles(groupId) {
+    const group = document.getElementById(groupId);
+    if (!group) return;
+    group.querySelectorAll('label.sc-radio-lbl').forEach(lbl => {
+        const radio = lbl.querySelector('input[type=radio]');
+        const dot   = lbl.querySelector('.sc-dot');
+        if (radio && radio.checked) {
+            lbl.style.background     = 'var(--accent-dim)';
+            lbl.style.borderColor    = 'rgba(12,177,0,.35)';
+            lbl.style.color          = 'var(--ink)';
+            if (dot) { dot.style.background='var(--accent)'; dot.style.borderColor='var(--accent)'; dot.innerHTML='<i class="fas fa-check" style="font-size:.5rem;color:#fff"></i>'; }
+        } else {
+            lbl.style.background     = 'var(--surface)';
+            lbl.style.borderColor    = 'rgba(10,10,15,.1)';
+            lbl.style.color          = 'var(--ink-soft)';
+            if (dot) { dot.style.background=''; dot.style.borderColor='rgba(10,10,15,.2)'; dot.innerHTML=''; }
+        }
+    });
+}
+// Initialise on page load
+document.querySelectorAll('[id$="SecondCatGroup"]').forEach(g => syncSecondCatStyles(g.id));
+
+// ── Global table search ───────────────────────────────────────────────
 document.getElementById('gSearch')?.addEventListener('input', function() {
     const q = this.value.toLowerCase();
     document.querySelectorAll('tbody tr').forEach(row => {
@@ -3005,74 +3105,78 @@ document.getElementById('gSearch')?.addEventListener('input', function() {
     });
 });
 
-// Per-table search
+// ── Inline table search helpers ───────────────────────────────────────
 function bindSearch(inputId, tableId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    input.addEventListener('input', function() {
+    const inp = document.getElementById(inputId);
+    const tbl = document.getElementById(tableId);
+    if (!inp || !tbl) return;
+    inp.addEventListener('input', function() {
         const q = this.value.toLowerCase();
-        document.querySelectorAll('#' + tableId + ' tbody tr').forEach(row => {
+        tbl.querySelectorAll('tbody tr').forEach(row => {
             row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
         });
     });
 }
-bindSearch('prodSearch',   'prodTable');
-bindSearch('orderSearch',  'orderTable');
-bindSearch('custSearch',   'custTable');
-bindSearch('catSearch',    'catTable');
-bindSearch('tickerSearch', 'tickerTable');
+bindSearch('prodSearch',    'prodTable');
+bindSearch('orderSearch',   'orderTable');
+bindSearch('custSearch',    'custTable');
+bindSearch('catSearch',     'catTable');
+bindSearch('tickerSearch',  'tickerTable');
 
-// ── Category tab filter (products page) ──────────────────────────────────────
-document.querySelectorAll('#catTabs .ftab').forEach(tab => {
+// ── Category tab filter ───────────────────────────────────────────────
+document.getElementById('catTabs')?.querySelectorAll('.ftab').forEach(tab => {
     tab.addEventListener('click', function(e) {
         e.preventDefault();
         document.querySelectorAll('#catTabs .ftab').forEach(t => t.classList.remove('active'));
         this.classList.add('active');
         const cat = this.dataset.cat;
         document.querySelectorAll('#prodTable tbody tr').forEach(row => {
-            row.style.display = (cat === 'all' || row.dataset.cat === cat) ? '' : 'none';
+            row.style.display = (cat==='all' || row.dataset.cat===cat) ? '' : 'none';
         });
     });
 });
 
-// ── Order status filter ───────────────────────────────────────────────────────
-document.querySelectorAll('#orderTabs .ftab').forEach(tab => {
+// ── Order status tab filter ───────────────────────────────────────────
+document.getElementById('orderTabs')?.querySelectorAll('.ftab').forEach(tab => {
     tab.addEventListener('click', function(e) {
         e.preventDefault();
         document.querySelectorAll('#orderTabs .ftab').forEach(t => t.classList.remove('active'));
         this.classList.add('active');
-        const filter = this.dataset.filter;
+        const f = this.dataset.filter;
         document.querySelectorAll('#orderTable tbody tr').forEach(row => {
-            row.style.display = (filter === 'all' || row.dataset.status === filter) ? '' : 'none';
+            row.style.display = (f==='all' || row.dataset.status===f) ? '' : 'none';
         });
     });
 });
 
-// ── CSV Export ────────────────────────────────────────────────────────────────
+// ── Ticker colour preview live update ────────────────────────────────
+function updateTickerPreviewColor(hex) {
+    const bars = ['livePreviewBar','dashTickerBar'];
+    bars.forEach(id => { const el=document.getElementById(id); if(el) el.style.background=hex; });
+}
+
+// ── Export table to CSV ───────────────────────────────────────────────
 function exportTable(tableId) {
-    const table = document.getElementById(tableId);
-    if (!table) return;
+    const tbl = document.getElementById(tableId);
+    if (!tbl) return;
     let csv = [];
-    table.querySelectorAll('tr').forEach(row => {
-        const cells = [...row.querySelectorAll('th,td')].map(cell => '"' + cell.innerText.replace(/"/g, '""').trim() + '"');
-        csv.push(cells.join(','));
+    tbl.querySelectorAll('tr').forEach(row => {
+        const cols = [];
+        row.querySelectorAll('th,td').forEach(cell => {
+            let t = cell.innerText.replace(/\s+/g,' ').trim().replace(/"/g,'""');
+            cols.push('"'+t+'"');
+        });
+        csv.push(cols.join(','));
     });
-    const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = tableId + '_' + new Date().toISOString().slice(0,10) + '.csv';
+    const blob = new Blob([csv.join('\n')], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = tableId + '_export_' + new Date().toISOString().slice(0,10) + '.csv';
     a.click();
 }
 
-// ── Auto-dismiss flash messages ───────────────────────────────────────────────
-const flashEl = document.querySelector('.flash');
-if (flashEl) {
-    setTimeout(() => {
-        flashEl.style.transition = 'opacity .5s';
-        flashEl.style.opacity    = '0';
-        setTimeout(() => flashEl.remove(), 500);
-    }, 4500);
-}
+// ── Flash auto-dismiss ────────────────────────────────────────────────
+setTimeout(() => { const f = document.querySelector('.flash'); if(f) { f.style.transition='opacity .5s'; f.style.opacity='0'; setTimeout(()=>f.remove(),500); } }, 4500);
 </script>
 
 </body>

@@ -217,10 +217,62 @@ include 'popup.php';
     .products-row-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:16px; }
     .prod-card { background:var(--card); border-radius:18px; overflow:hidden; box-shadow:var(--shadow-card); display:flex; flex-direction:column; transition:box-shadow .3s ease,transform .3s ease; position:relative; }
     .prod-card:hover { box-shadow:0 16px 40px rgba(10,10,15,.14); transform:translateY(-4px); }
-    .prod-card-badges { position:absolute; top:10px; left:10px; z-index:3; display:flex; flex-direction:column; gap:4px; }
-    .badge-discount { display:inline-block; background:#ef4444; color:#fff; font-size:.65rem; font-weight:800; padding:3px 8px; border-radius:100px; }
-    .badge-today    { display:inline-block; background:var(--accent); color:#fff; font-size:.6rem; font-weight:800; padding:2px 7px; border-radius:100px; text-transform:uppercase; letter-spacing:.05em; }
-    .badge-low      { display:inline-block; background:#f59e0b; color:#fff; font-size:.6rem; font-weight:700; padding:2px 7px; border-radius:100px; }
+
+    /* ── RIBBON BADGE (corner triangle — matches screenshot) ── */
+    .prod-card-ribbon {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 86px;
+        height: 86px;
+        overflow: hidden;
+        z-index: 4;
+        pointer-events: none;
+        border-radius: 0 18px 0 0; /* match card corner */
+    }
+    .prod-card-ribbon .ribbon-inner {
+        position: absolute;
+        top: 14px;
+        right: -24px;
+        width: 96px;
+        padding: 6px 0 5px;
+        text-align: center;
+        transform: rotate(45deg);
+        box-shadow: 0 3px 10px rgba(0,0,0,.22);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        line-height: 1;
+    }
+    .prod-card-ribbon .ribbon-inner span {
+        display: block;
+        font-family: 'Red Hat Display', sans-serif;
+        color: #fff;
+        white-space: nowrap;
+    }
+    .prod-card-ribbon .ribbon-inner .r-top {
+        font-size: .6rem;
+        font-weight: 700;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        opacity: .92;
+    }
+    .prod-card-ribbon .ribbon-inner .r-main {
+        font-size: .75rem;
+        font-weight: 900;
+        letter-spacing: .03em;
+        text-transform: uppercase;
+    }
+
+    /* Colour variants */
+    .ribbon-sale   .ribbon-inner { background: linear-gradient(135deg, #ff3b30, #c0392b); }
+    .ribbon-today  .ribbon-inner { background: linear-gradient(135deg, #0cb100, #087a00); }
+    .ribbon-seller .ribbon-inner { background: linear-gradient(135deg, #003879, #0080ff); }
+
+    /* Keep low-stock as a small pill — not a ribbon */
+    .badge-low { position:absolute; bottom:8px; left:8px; z-index:4; display:inline-block; background:#f59e0b; color:#fff; font-size:.6rem; font-weight:700; padding:3px 8px; border-radius:100px; }
+
     .prod-card-img-wrap { height:170px; background:var(--surface); display:flex; align-items:center; justify-content:center; text-decoration:none; overflow:hidden; position:relative; }
     .prod-card-img-wrap img { max-width:90%; max-height:90%; object-fit:contain; transition:transform .4s ease; }
     .prod-card:hover .prod-card-img-wrap img { transform:scale(1.06); }
@@ -327,62 +379,16 @@ include 'popup.php';
     <div class="cats-grid">
         <?php
         $categories = [
-            [
-                'icon'  => 'fa-laptop',
-                'title' => 'Laptops & Notebooks',
-                'desc'  => 'High-performance laptops for gaming, business & everyday use.',
-                'url'   => 'products.php?category=laptops',
-                'img'   => 'uploads/homeassets/laptops.png',
-                'color' => '#0d1b2a',
-            ],
-            [
-                'icon'  => 'fa-desktop',
-                'title' => 'Desktop PCs',
-                'desc'  => 'Custom-built desktops and workstations for maximum performance.',
-                'url'   => 'products.php?category=desktops',
-                'img'   => 'assets/categories/desktops.jpg',
-                'color' => '#0a1628',
-            ],
-            [
-                'icon'  => 'fa-memory',
-                'title' => 'RAM & Storage',
-                'desc'  => 'High-speed memory modules and storage solutions.',
-                'url'   => 'products.php?category=memory',
-                'img'   => 'assets/categories/memory.jpg',
-                'color' => '#0d1a0d',
-            ],
-            [
-                'icon'  => 'fa-tv',
-                'title' => 'Graphics Cards',
-                'desc'  => 'Latest VGA cards for gaming and professional work.',
-                'url'   => 'products.php?category=graphics',
-                'img'   => 'assets/categories/graphics.jpg',
-                'color' => '#1a0d28',
-            ],
-            [
-                'icon'  => 'fa-keyboard',
-                'title' => 'Keyboards & Mice',
-                'desc'  => 'Premium input devices for gaming and productivity.',
-                'url'   => 'products.php?category=peripherals',
-                'img'   => 'assets/categories/peripherals.jpg',
-                'color' => '#1a1200',
-            ],
-            [
-                'icon'  => 'fa-headphones',
-                'title' => 'Audio Devices',
-                'desc'  => 'High-quality headphones, speakers and audio equipment.',
-                'url'   => 'products.php?category=audio',
-                'img'   => 'assets/categories/audio.jpg',
-                'color' => '#0d1a1a',
-            ],
+            ['icon'=>'fa-laptop',    'title'=>'Laptops & Notebooks',  'desc'=>'High-performance laptops for gaming, business & everyday use.', 'url'=>'products.php?category=laptops',    'img'=>'uploads/homeassets/laptops.png',    'color'=>'#0d1b2a'],
+            ['icon'=>'fa-desktop',   'title'=>'Desktop PCs',          'desc'=>'Custom-built desktops and workstations for maximum performance.','url'=>'products.php?category=desktops',   'img'=>'assets/categories/desktops.jpg',   'color'=>'#0a1628'],
+            ['icon'=>'fa-memory',    'title'=>'RAM & Storage',         'desc'=>'High-speed memory modules and storage solutions.',               'url'=>'products.php?category=memory',     'img'=>'assets/categories/memory.jpg',     'color'=>'#0d1a0d'],
+            ['icon'=>'fa-tv',        'title'=>'Graphics Cards',        'desc'=>'Latest VGA cards for gaming and professional work.',             'url'=>'products.php?category=graphics',   'img'=>'assets/categories/graphics.jpg',   'color'=>'#1a0d28'],
+            ['icon'=>'fa-keyboard',  'title'=>'Keyboards & Mice',      'desc'=>'Premium input devices for gaming and productivity.',             'url'=>'products.php?category=peripherals','img'=>'assets/categories/peripherals.jpg','color'=>'#1a1200'],
+            ['icon'=>'fa-headphones','title'=>'Audio Devices',         'desc'=>'High-quality headphones, speakers and audio equipment.',         'url'=>'products.php?category=audio',      'img'=>'assets/categories/audio.jpg',      'color'=>'#0d1a1a'],
         ];
         foreach ($categories as $i => $cat): ?>
         <a href="<?= $cat['url'] ?>" class="cat-card" style="transition-delay:<?= $i * 70 ?>ms;background-color:<?= $cat['color'] ?>">
-            <img class="cat-bg-img"
-                 src="<?= htmlspecialchars($cat['img']) ?>"
-                 alt="<?= htmlspecialchars($cat['title']) ?>"
-                 loading="lazy"
-                 onerror="this.style.display='none'">
+            <img class="cat-bg-img" src="<?= htmlspecialchars($cat['img']) ?>" alt="<?= htmlspecialchars($cat['title']) ?>" loading="lazy" onerror="this.style.display='none'">
             <div class="cat-icon-wrap"><i class="fas <?= $cat['icon'] ?>"></i></div>
             <div class="cat-card-content-inner">
                 <div class="cat-title"><?= $cat['title'] ?></div>
@@ -404,13 +410,13 @@ include 'popup.php';
                 <h2 class="section-heading" style="color:#fff">Limited-Time Deals</h2>
                 <p class="section-sub" style="color:rgba(255,255,255,.45)">Today only — prices drop at midnight</p>
             </div>
-            <div class="deals-countdown">
+            <!--<div class="deals-countdown">
                 <div class="cd-block"><span class="cd-num" id="cd-h">00</span><span class="cd-lbl">Hours</span></div>
                 <div class="cd-sep">:</div>
                 <div class="cd-block"><span class="cd-num" id="cd-m">00</span><span class="cd-lbl">Mins</span></div>
                 <div class="cd-sep">:</div>
                 <div class="cd-block"><span class="cd-num" id="cd-s">00</span><span class="cd-lbl">Secs</span></div>
-            </div>
+            </div>-->
         </div>
 
         <?php if (!empty($deal_products)): ?>
@@ -422,11 +428,30 @@ include 'popup.php';
                 $img  = trim($p['image'] ?? '');
             ?>
             <div class="prod-card deal-card">
-                <div class="prod-card-badges">
-                    <?php if ($disc > 0): ?><span class="badge-discount">-<?= $disc ?>%</span><?php endif; ?>
-                    <span class="badge-today">Only Today</span>
-                    <?php if ($stk > 0 && $stk <= 5): ?><span class="badge-low">Only <?= $stk ?> left</span><?php endif; ?>
+
+                <!-- ── RIBBON: Sale discount ── -->
+                <?php if ($disc > 0): ?>
+                <div class="prod-card-ribbon ribbon-sale">
+                    <div class="ribbon-inner">
+                        <span class="r-top">Limited</span>
+                        <span class="r-main">Offers</span>
+                    </div>
                 </div>
+                <?php else: ?>
+                <!-- ── RIBBON: Only Today (when no discount %) ── -->
+                <div class="prod-card-ribbon ribbon-today">
+                    <div class="ribbon-inner">
+                        <span class="r-top">Only</span>
+                        <span class="r-main">Today</span>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Low stock pill (bottom-left, non-ribbon) -->
+                <?php if ($stk > 0 && $stk <= 5): ?>
+                <span class="badge-low">Only <?= $stk ?> left</span>
+                <?php endif; ?>
+
                 <a href="product-details.php?id=<?= (int)$p['id'] ?>" class="prod-card-img-wrap">
                     <?php if ($img !== ''): ?>
                     <img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($p['name']) ?>" loading="lazy"
@@ -459,7 +484,7 @@ include 'popup.php';
         <?php endif; ?>
 
         <div style="text-align:center;margin-top:2rem">
-            <a href="products.php" class="btn-primary-custom">View All Products <i class="fas fa-arrow-right"></i></a>
+            <!-- <a href="products.php" class="btn-primary-custom">View All Products <i class="fas fa-arrow-right"></i></a>-->
         </div>
     </div>
 </section>
@@ -481,9 +506,15 @@ include 'popup.php';
             $img  = trim($p['image'] ?? '');
         ?>
         <div class="prod-card" style="opacity:0;transform:translateY(20px);transition:opacity .5s ease <?= $idx * 55 ?>ms,transform .5s ease <?= $idx * 55 ?>ms,box-shadow .3s ease">
-            <?php if ($disc > 0): ?>
-            <div class="prod-card-badges"><span class="badge-discount">-<?= $disc ?>%</span></div>
-            <?php endif; ?>
+
+            <!-- ── RIBBON: Best Seller ── -->
+            <div class="prod-card-ribbon ribbon-seller">
+                <div class="ribbon-inner">
+                    <span class="r-top">Best</span>
+                    <span class="r-main">SELLER</span>
+                </div>
+            </div>
+
             <a href="product-details.php?id=<?= (int)$p['id'] ?>" class="prod-card-img-wrap">
                 <?php if ($img !== ''): ?>
                 <img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($p['name']) ?>" loading="lazy"
@@ -516,15 +547,12 @@ include 'popup.php';
     <?php endif; ?>
 
     <div style="text-align:center;margin-top:2.5rem">
-        <a href="products.php" class="btn-view-all">Browse Full Catalogue <i class="fas fa-arrow-right"></i></a>
+        <!--<a href="products.php" class="btn-view-all">Browse Full Catalogue <i class="fas fa-arrow-right"></i></a>-->
     </div>
 </section>
 
 
-<!-- WhatsApp FAB -->
-<a href="https://wa.me/94xxxxxxxxx" class="wa-btn" target="_blank" aria-label="Chat on WhatsApp">
-    <i class="fab fa-whatsapp"></i>
-</a>
+
 
 <!-- Cart FAB (mobile) -->
 <a href="cart.php" class="cart-fab" aria-label="View cart">

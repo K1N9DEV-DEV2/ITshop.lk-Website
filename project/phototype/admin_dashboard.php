@@ -1462,8 +1462,12 @@ function cat2Badge(string $cat2, array $cat_map): string {
         $dash_deals = [];
         if ($pdo) {
             try {
-                // PATCH: Added category2 to SELECT
-                $stmt = $pdo->query("SELECT id, name, brand, category, category2, price, original_price, stock_count, image FROM products WHERE original_price > price AND stock_count > 0 ORDER BY (original_price - price) DESC LIMIT 5");
+                $stmt = $pdo->query(
+                    "SELECT id, name, brand, category, category2, price, original_price, stock_count, image
+                    FROM products
+                    WHERE category2 = 'limited_time_deals'
+                    ORDER BY (original_price - price) DESC"
+                );
                 $dash_deals = $stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (PDOException $e) {}
         }
@@ -1577,29 +1581,29 @@ function cat2Badge(string $cat2, array $cat_map): string {
         <?php
         $dash_bestsellers = [];
         if ($pdo) {
-            try {
-                // PATCH: Added p.category2 to SELECT
-                $stmt = $pdo->query(
-                    "SELECT p.id, p.name, p.brand, p.category, p.category2, p.price,
-                            p.original_price, p.stock_count, p.image,
-                            COALESCE(SUM(oi.quantity),0) as total_sold
-                     FROM products p
-                     LEFT JOIN order_items oi ON oi.product_id = p.id
-                     WHERE p.stock_count > 0
-                     GROUP BY p.id
-                     ORDER BY total_sold DESC, p.id ASC
-                     LIMIT 10"
-                );
-                $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            } catch (PDOException $e) {
-                // Fallback if order_items doesn't exist yet
-                try {
-                    // PATCH: Added category2 to fallback SELECT too
-                    $stmt = $pdo->query("SELECT id, name, brand, category, category2, price, original_price, stock_count, image, 0 as total_sold FROM products WHERE stock_count > 0 ORDER BY id ASC LIMIT 10");
-                    $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                } catch (PDOException $e2) {}
-            }
-        }
+    try {
+        $stmt = $pdo->query(
+            "SELECT p.id, p.name, p.brand, p.category, p.category2, p.price,
+                    p.original_price, p.stock_count, p.image,
+                    COALESCE(SUM(oi.quantity),0) as total_sold
+             FROM products p
+             LEFT JOIN order_items oi ON oi.product_id = p.id
+             WHERE p.category2 = 'best_selling_products'
+             GROUP BY p.id
+             ORDER BY total_sold DESC, p.id ASC
+             LIMIT 10"
+        );
+        $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        try {
+            $stmt = $pdo->query(
+                "SELECT id, name, brand, category, category2, price, original_price, stock_count, image, 0 as total_sold
+                 FROM products WHERE category2 = 'best_selling_products' ORDER BY id ASC LIMIT 10"
+            );
+            $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e2) {}
+    }
+}
         $max_sold = !empty($dash_bestsellers) ? max(array_column($dash_bestsellers,'total_sold')) : 1;
         if ($max_sold < 1) $max_sold = 1;
         ?>

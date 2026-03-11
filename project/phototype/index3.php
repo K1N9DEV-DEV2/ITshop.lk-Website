@@ -307,6 +307,143 @@ include 'popup.php';
     .deal-card .prod-orig          { color:rgba(255,255,255,.35) !important; }
     .deal-card .prod-card-img-wrap { background:rgba(255,255,255,.04) !important; }
 
+    /* ── PROMO BANNER ─────────────────────────────────── */
+.promo-banner-section {
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    background: #050510;
+}
+.promo-banner-inner {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/7;
+    min-height: 420px;
+    max-height: 620px;
+    display: flex;
+    align-items: center;
+}
+.promo-banner-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+}
+.promo-banner-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+}
+.promo-banner-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        100deg,
+        rgba(5,5,16,.92) 0%,
+        rgba(5,5,16,.72) 45%,
+        rgba(5,5,16,.25) 75%,
+        rgba(5,5,16,.1) 100%
+    );
+    z-index: 1;
+}
+.promo-banner-content {
+    position: relative;
+    z-index: 2;
+    padding: 4rem clamp(1.5rem, 6vw, 6rem);
+    max-width: 640px;
+}
+.promo-banner-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.25rem;
+}
+.promo-dot {
+    width: 7px;
+    height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 10px rgba(12,177,0,.8);
+    animation: promoDotPulse 1.8s ease-in-out infinite;
+}
+@keyframes promoDotPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%       { transform: scale(1.5); opacity: .6; }
+}
+.promo-banner-title {
+    font-size: clamp(2rem, 4.5vw, 3.6rem);
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.05;
+    letter-spacing: -.03em;
+    margin-bottom: 1.25rem;
+}
+.promo-banner-title em {
+    font-style: normal;
+    background: linear-gradient(135deg, #1eff00 0%, #00b4d8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.promo-banner-sub {
+    font-size: 1rem;
+    color: rgba(255,255,255,.55);
+    line-height: 1.7;
+    margin-bottom: 2rem;
+    max-width: 440px;
+}
+.promo-banner-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 2.5rem;
+}
+.promo-banner-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+.promo-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.promo-stat-num {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+}
+.promo-stat-lbl {
+    font-size: .68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: rgba(255,255,255,.38);
+}
+.promo-stat-divider {
+    width: 1px;
+    height: 36px;
+    background: rgba(255,255,255,.12);
+}
+
+@media (max-width: 768px) {
+    .promo-banner-inner { aspect-ratio: unset; min-height: 480px; }
+    .promo-banner-overlay {
+        background: linear-gradient(180deg, rgba(5,5,16,.55) 0%, rgba(5,5,16,.92) 60%);
+    }
+    .promo-banner-content { padding: 2rem 1.5rem; max-width: 100%; }
+    .promo-banner-title { font-size: clamp(1.8rem, 7vw, 2.4rem); }
+}
+
     /* ── BESTSELLERS ──────────────────────────────────── */
     .bestsellers-section { padding:6rem 0; background:var(--surface); }
 
@@ -485,6 +622,34 @@ include 'popup.php';
 
         <div style="text-align:center;margin-top:2rem">
             <!-- <a href="products.php" class="btn-primary-custom">View All Products <i class="fas fa-arrow-right"></i></a>-->
+        </div>
+    </div>
+</section>
+
+<!-- FULL-WIDTH PROMO BANNER -->
+<section class="promo-banner-section">
+    <div class="promo-banner-inner">
+        <div class="promo-banner-bg">
+            <!-- Replace src with your 1920x1080 image path -->
+            <img src="uploads/homeassets/promo-banner.jpg" alt="Special Promotion" class="promo-banner-img"
+                 onerror="this.style.display='none'">
+            <div class="promo-banner-overlay"></div>
+        </div>
+        <div class="promo-banner-content">
+            <div class="promo-banner-eyebrow"><span class="promo-dot"></span> Exclusive Offer</div>
+            <h2 class="promo-banner-title">Upgrade Your Setup<br><em>Like Never Before</em></h2>
+            <p class="promo-banner-sub">Discover premium gear, unbeatable prices, and lightning-fast delivery across Sri Lanka. Your dream workstation starts here.</p>
+            <div class="promo-banner-actions">
+                <a href="products.php" class="btn-primary-custom">Shop Now <i class="fas fa-arrow-right"></i></a>
+                <a href="products.php" class="btn-ghost">View All Products <i class="fas fa-th-large"></i></a>
+            </div>
+            <div class="promo-banner-stats">
+                <div class="promo-stat"><span class="promo-stat-num">10K+</span><span class="promo-stat-lbl">Happy Customers</span></div>
+                <div class="promo-stat-divider"></div>
+                <div class="promo-stat"><span class="promo-stat-num">5K+</span><span class="promo-stat-lbl">Products</span></div>
+                <div class="promo-stat-divider"></div>
+                <div class="promo-stat"><span class="promo-stat-num">Fast</span><span class="promo-stat-lbl">Island-Wide Delivery</span></div>
+            </div>
         </div>
     </div>
 </section>

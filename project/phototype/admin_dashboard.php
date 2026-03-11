@@ -2578,8 +2578,8 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <div class="fg">
                         <!-- PATCH: Category 2 field -->
                         <label>Category 2 <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
-                        <select name="category2" class="fc">
-                            <option value="">— None —</option>
+                        <select name="category2" class="fc" id="addProdCategory2">
+                            <option value="" selected>— None —</option>
                             <option value="limited_time_deals">Limited-Time Deals</option>
                             <option value="best_selling_products">Best Selling Products</option>
                         </select>
@@ -2634,7 +2634,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                         <!-- PATCH: Category 2 field -->
                         <label>Category 2 <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
                         <select name="category2" id="editProdCategory2" class="fc">
-                            <option value="">— None —</option>
+                            <option value="" selected>— None —</option>
                             <option value="limited_time_deals">Limited-Time Deals</option>
                             <option value="best_selling_products">Best Selling Products</option>
                         </select>
@@ -2911,7 +2911,21 @@ function cat2Badge(string $cat2, array $cat_map): string {
 
 <script>
 // ── Modal helpers ─────────────────────────────────────────────────────────────
-function openModal(id)  { document.getElementById(id).classList.add('open');    document.body.style.overflow='hidden'; }
+function openModal(id) {
+    const modal = document.getElementById(id);
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    // Reset category2 selects to blank on every open
+    if (id === 'addProductModal') {
+        const s = document.getElementById('addProdCategory2');
+        if (s) { s.selectedIndex = 0; s.value = ''; }
+    }
+    if (id === 'editProductModal') {
+        const s = document.getElementById('editProdCategory2');
+        if (s) { s.selectedIndex = 0; }
+    }
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow=''; }
 
 document.querySelectorAll('.m-overlay').forEach(ov => {
@@ -3015,7 +3029,9 @@ function openEditProduct(data) {
     document.getElementById('editProdName').value         = data.name        || '';
     document.getElementById('editProdBrand').value        = data.brand       || '';
     document.getElementById('editProdCategory').value     = data.category    || '';
-    document.getElementById('editProdCategory2').value    = data.category2   || '';
+    const cat2El = document.getElementById('editProdCategory2');
+    cat2El.selectedIndex = 0;
+    cat2El.value = (data.category2 && data.category2 !== '') ? data.category2 : '';
     document.getElementById('editProdPrice').value        = data.price       || '';
     document.getElementById('editProdOrigPrice').value    = data.original_price || '';
     document.getElementById('editProdStock').value        = data.stock_count != null ? data.stock_count : 0;

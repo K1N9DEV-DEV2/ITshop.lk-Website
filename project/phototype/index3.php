@@ -159,7 +159,7 @@ include 'popup.php';
     .hero { min-height: 100vh; padding-top: 90px; position: relative; overflow: hidden; background: #050510; }
     .hero-slides { position: absolute; inset: 0; z-index: 0; }
     .hero-slide { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transform: scale(1.04); background-color: #050510; transition: opacity 1s ease, transform 6s ease; }
-    .hero-slide::before { content:''; position:absolute; inset:0; z-index:1; background:linear-gradient(135deg,rgba(5,5,16,.82) 0%,rgba(5,5,16,.45) 100%); }
+      /*.hero-slide::before { content:''; position:absolute; inset:0; z-index:1; background:linear-gradient(135deg,rgba(5,5,16,.82) 0%,rgba(5,5,16,.45) 100%); }*/
     .hero-slide.active { opacity: 1; transform: scale(1); }
     .hero-grid { position:absolute; inset:0; z-index:1; pointer-events:none; background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px); background-size:60px 60px; }
     .hero-glow { position:absolute; z-index:1; width:600px; height:600px; border-radius:50%; background:radial-gradient(circle,rgba(70,229,91,.22) 0%,transparent 70%); top:-120px; right:-100px; filter:blur(90px); pointer-events:none; animation:glowPulse 5s ease-in-out infinite alternate; }
@@ -473,7 +473,7 @@ include 'popup.php';
     </div>
     <div class="hero-grid"></div>
     <div class="hero-glow"></div>
-    <div class="hero-content-wrap">
+    <!--<div class="hero-content-wrap">
         <?php foreach ($hero_slides as $i => $slide):
             $link      = !empty($slide['link_url'])       ? htmlspecialchars($slide['link_url'])       : 'products.php';
             $btn_text  = !empty($slide['btn_text'])       ? htmlspecialchars($slide['btn_text'])       : 'Shop Now';
@@ -492,7 +492,7 @@ include 'popup.php';
             </div>
         </div>
         <?php endforeach; ?>
-    </div>
+    </div>-->
     <?php if (count($hero_slides) > 1): ?>
     <button class="slider-arrow slider-arrow-prev" aria-label="Previous slide"><i class="fas fa-chevron-left"></i></button>
     <button class="slider-arrow slider-arrow-next" aria-label="Next slide"><i class="fas fa-chevron-right"></i></button>
@@ -517,11 +517,11 @@ include 'popup.php';
         <?php
         $categories = [
             ['icon'=>'fa-laptop',    'title'=>'Laptops & Notebooks',  'desc'=>'High-performance laptops for gaming, business & everyday use.', 'url'=>'products.php?category=laptops',    'img'=>'uploads/homeassets/laptops.png',    'color'=>'#0d1b2a'],
-            ['icon'=>'fa-desktop',   'title'=>'Desktop PCs',          'desc'=>'Custom-built desktops and workstations for maximum performance.','url'=>'products.php?category=desktops',   'img'=>'assets/categories/desktops.jpg',   'color'=>'#0a1628'],
-            ['icon'=>'fa-memory',    'title'=>'RAM & Storage',         'desc'=>'High-speed memory modules and storage solutions.',               'url'=>'products.php?category=memory',     'img'=>'assets/categories/memory.jpg',     'color'=>'#0d1a0d'],
-            ['icon'=>'fa-tv',        'title'=>'Graphics Cards',        'desc'=>'Latest VGA cards for gaming and professional work.',             'url'=>'products.php?category=graphics',   'img'=>'assets/categories/graphics.jpg',   'color'=>'#1a0d28'],
-            ['icon'=>'fa-keyboard',  'title'=>'Keyboards & Mice',      'desc'=>'Premium input devices for gaming and productivity.',             'url'=>'products.php?category=peripherals','img'=>'assets/categories/peripherals.jpg','color'=>'#1a1200'],
-            ['icon'=>'fa-headphones','title'=>'Audio Devices',         'desc'=>'High-quality headphones, speakers and audio equipment.',         'url'=>'products.php?category=audio',      'img'=>'assets/categories/audio.jpg',      'color'=>'#0d1a1a'],
+            ['icon'=>'fa-desktop',   'title'=>'Desktop PCs',          'desc'=>'Custom-built desktops and workstations for maximum performance.','url'=>'products.php?category=desktops',   'img'=>'assets/homeassets/desktops.jpg',   'color'=>'#0a1628'],
+            ['icon'=>'fa-memory',    'title'=>'RAM & Storage',         'desc'=>'High-speed memory modules and storage solutions.',               'url'=>'products.php?category=memory',     'img'=>'assets/homeassets/memory.jpg',     'color'=>'#0d1a0d'],
+            ['icon'=>'fa-tv',        'title'=>'Graphics Cards',        'desc'=>'Latest VGA cards for gaming and professional work.',             'url'=>'products.php?category=graphics',   'img'=>'assets/homeassets/graphics.jpg',   'color'=>'#1a0d28'],
+            ['icon'=>'fa-keyboard',  'title'=>'Keyboards & Mice',      'desc'=>'Premium input devices for gaming and productivity.',             'url'=>'products.php?category=peripherals','img'=>'assets/homeassets/peripherals.jpg','color'=>'#1a1200'],
+            ['icon'=>'fa-headphones','title'=>'Audio Devices',         'desc'=>'High-quality headphones, speakers and audio equipment.',         'url'=>'products.php?category=audio',      'img'=>'assets/homeassets/audio.jpg',      'color'=>'#0d1a1a'],
         ];
         foreach ($categories as $i => $cat): ?>
         <a href="<?= $cat['url'] ?>" class="cat-card" style="transition-delay:<?= $i * 70 ?>ms;background-color:<?= $cat['color'] ?>">
@@ -538,7 +538,7 @@ include 'popup.php';
 </section>
 
 
-<!-- LIMITED-TIME DEALS -->
+<!-- LIMITED-TIME DEALS 
 <section class="deals-section">
     <div class="deals-inner">
         <div class="deals-header">
@@ -547,13 +547,13 @@ include 'popup.php';
                 <h2 class="section-heading" style="color:#fff">Limited-Time Deals</h2>
                 <p class="section-sub" style="color:rgba(255,255,255,.45)">Today only — prices drop at midnight</p>
             </div>
-            <!--<div class="deals-countdown">
+            <div class="deals-countdown">
                 <div class="cd-block"><span class="cd-num" id="cd-h">00</span><span class="cd-lbl">Hours</span></div>
                 <div class="cd-sep">:</div>
                 <div class="cd-block"><span class="cd-num" id="cd-m">00</span><span class="cd-lbl">Mins</span></div>
                 <div class="cd-sep">:</div>
                 <div class="cd-block"><span class="cd-num" id="cd-s">00</span><span class="cd-lbl">Secs</span></div>
-            </div>-->
+            </div>
         </div>
 
         <?php if (!empty($deal_products)): ?>
@@ -566,7 +566,7 @@ include 'popup.php';
             ?>
             <div class="prod-card deal-card">
 
-                <!-- ── RIBBON: Sale discount ── -->
+                 ── RIBBON: Sale discount ── 
                 <?php if ($disc > 0): ?>
                 <div class="prod-card-ribbon ribbon-sale">
                     <div class="ribbon-inner">
@@ -575,7 +575,7 @@ include 'popup.php';
                     </div>
                 </div>
                 <?php else: ?>
-                <!-- ── RIBBON: Only Today (when no discount %) ── -->
+                 ── RIBBON: Only Today (when no discount %) ── 
                 <div class="prod-card-ribbon ribbon-today">
                     <div class="ribbon-inner">
                         <span class="r-top">Only</span>
@@ -584,7 +584,7 @@ include 'popup.php';
                 </div>
                 <?php endif; ?>
 
-                <!-- Low stock pill (bottom-left, non-ribbon) -->
+                 Low stock pill (bottom-left, non-ribbon) 
                 <?php if ($stk > 0 && $stk <= 5): ?>
                 <span class="badge-low">Only <?= $stk ?> left</span>
                 <?php endif; ?>
@@ -621,35 +621,35 @@ include 'popup.php';
         <?php endif; ?>
 
         <div style="text-align:center;margin-top:2rem">
-            <!-- <a href="products.php" class="btn-primary-custom">View All Products <i class="fas fa-arrow-right"></i></a>-->
+             <a href="products.php" class="btn-primary-custom">View All Products <i class="fas fa-arrow-right"></i></a>
         </div>
     </div>
-</section>
+</section>-->
 
 <!-- FULL-WIDTH PROMO BANNER -->
 <section class="promo-banner-section">
     <div class="promo-banner-inner">
         <div class="promo-banner-bg">
             <!-- Replace src with your 1920x1080 image path -->
-            <img src="uploads/homeassets/promo-banner.jpg" alt="Special Promotion" class="promo-banner-img"
+            <img src="assets/homeassets/promo.png" alt="Special Promotion" class="promo-banner-img"
                  onerror="this.style.display='none'">
             <div class="promo-banner-overlay"></div>
         </div>
         <div class="promo-banner-content">
-            <div class="promo-banner-eyebrow"><span class="promo-dot"></span> Exclusive Offer</div>
+            <!--<div class="promo-banner-eyebrow"><span class="promo-dot"></span> Exclusive Offer</div>-->
             <h2 class="promo-banner-title">Upgrade Your Setup<br><em>Like Never Before</em></h2>
             <p class="promo-banner-sub">Discover premium gear, unbeatable prices, and lightning-fast delivery across Sri Lanka. Your dream workstation starts here.</p>
             <div class="promo-banner-actions">
                 <a href="products.php" class="btn-primary-custom">Shop Now <i class="fas fa-arrow-right"></i></a>
                 <a href="products.php" class="btn-ghost">View All Products <i class="fas fa-th-large"></i></a>
             </div>
-            <div class="promo-banner-stats">
+            <!--<div class="promo-banner-stats">
                 <div class="promo-stat"><span class="promo-stat-num">10K+</span><span class="promo-stat-lbl">Happy Customers</span></div>
                 <div class="promo-stat-divider"></div>
                 <div class="promo-stat"><span class="promo-stat-num">5K+</span><span class="promo-stat-lbl">Products</span></div>
                 <div class="promo-stat-divider"></div>
                 <div class="promo-stat"><span class="promo-stat-num">Fast</span><span class="promo-stat-lbl">Island-Wide Delivery</span></div>
-            </div>
+            </div>-->
         </div>
     </div>
 </section>

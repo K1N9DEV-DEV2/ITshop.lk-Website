@@ -344,18 +344,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image, $description]);
                 $new_id = $pdo->lastInsertId();
                 $specs_raw = trim($_POST['specs'] ?? '');
-                $warranty_years = max(0, intval($_POST['warranty_years'] ?? 1));
-                if ($new_id) {
-                    $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name, spec_value) VALUES (?, ?, ?)");
-                    if ($specs_raw) {
-                        foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) {
-                            $sp->execute([$new_id, $sl, '']);
-                        }
-                    }
-                    if ($warranty_years > 0) {
-                        $w_label = $warranty_years . ' ' . ($warranty_years === 1 ? 'Year' : 'Years');
-                        $sp->execute([$new_id, 'Warranty', $w_label]);
-                    }
+                if ($specs_raw && $new_id) {
+                    $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name) VALUES (?, ?)");
+                    foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) $sp->execute([$new_id, $sl]);
                 }
                 $flash = ['type' => 'success', 'msg' => "Product \"$name\" added successfully!"];
             } catch (PDOException $e) {
@@ -396,17 +387,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $pdo->prepare("UPDATE products SET name=?, brand=?, category=?, category2=?, price=?, original_price=?, stock_count=?, image=?, description=? WHERE id=?")
                     ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image, $description, $pid]);
                 $specs_raw = trim($_POST['specs'] ?? '');
-                $warranty_years = max(0, intval($_POST['warranty_years'] ?? 1));
                 $pdo->prepare("DELETE FROM product_specs WHERE product_id=?")->execute([$pid]);
-                $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name, spec_value) VALUES (?, ?, ?)");
                 if ($specs_raw) {
-                    foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) {
-                        $sp->execute([$pid, $sl, '']);
-                    }
-                }
-                if ($warranty_years > 0) {
-                    $w_label = $warranty_years . ' ' . ($warranty_years === 1 ? 'Year' : 'Years');
-                    $sp->execute([$pid, 'Warranty', $w_label]);
+                    $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name) VALUES (?, ?)");
+                    foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) $sp->execute([$pid, $sl]);
                 }
                 $flash = ['type' => 'success', 'msg' => "Product \"$name\" updated successfully!"];
             } catch (PDOException $e) {
@@ -1801,20 +1785,6 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     $cat2_label = $cat_map[$cat2_val]['label'] ?? ($cat2_val ? ucfirst(str_replace(['_','-'],' ',$cat2_val)) : '');
                     $is_orphan = $p['category'] && !isset($cat_map[$p['category']]);
                     $desc_short = $p['description'] ?? '';
-                    // Extract warranty years from specs string for edit modal
-                    $w_years_val = 1;
-                    if (!empty($p['specs'])) {
-                        foreach (explode("\n", $p['specs']) as $spec_line) {
-                            if (stripos($spec_line, 'warranty') !== false) {
-                                if (preg_match('/(\d+)\s*month/i', $spec_line, $wm)) {
-                                    $w_years_val = max(1, (int)round((int)$wm[1] / 12));
-                                } elseif (preg_match('/(\d+)/', $spec_line, $wm)) {
-                                    $w_years_val = (int)$wm[1];
-                                }
-                                break;
-                            }
-                        }
-                    }
                     $edit_data = [
                         'id'             => (int)$p['id'],
                         'name'           => $p['name'],
@@ -1827,7 +1797,6 @@ function cat2Badge(string $cat2, array $cat_map): string {
                         'image'          => $p['image'] ?? '',
                         'specs'          => $p['specs'] ?? '',
                         'description'    => $desc_short,
-                        'warranty_years' => $w_years_val,
                     ];
                 ?>
                 <tr data-cat="<?= htmlspecialchars($p['category']) ?>">
@@ -2643,24 +2612,13 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" class="fc" min="0" step="0.01"></div>
                 </div>
                 <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" class="fc" value="0" min="0"></div>
-                <div class="fg">
-                    <label>Warranty</label>
-                    <select name="warranty_years" class="fc">
-                        <option value="0">No Warranty</option>
-                        <option value="0.5">6 Months Warranty</option>
-                        <option value="1" selected>1 Year Warranty</option>
-                        <option value="2">2 Years Warranty</option>
-                        <option value="3">3 Years Warranty</option>
-                    </select>
-                    <div class="f-hint">Saved as a product spec on the product page.</div>
-                </div>
                 <!-- ── DESCRIPTION FIELD ── -->
                 <div class="fg">
                     <label><i class="fas fa-align-left" style="color:var(--accent);margin-right:4px"></i>Description</label>
                     <textarea name="description" id="addProdDescription" class="fc" rows="4" placeholder="Write a product description that will appear on the product detail page…"></textarea>
                     <div class="f-hint">Supports plain text. Shown in the Description tab on the product page.</div>
                 </div>
-                 <!--<div class="fg"><label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label><textarea name="specs" class="fc"></textarea></div>-->
+                <div class="fg"><label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label><textarea name="specs" class="fc"></textarea></div>
             </div>
             <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save</button></div>
         </form>
@@ -2712,23 +2670,13 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" id="editProdOrigPrice" class="fc" min="0" step="0.01"></div>
                 </div>
                 <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" id="editProdStock" class="fc" min="0"></div>
-                <div class="fg">
-                    <label>Warranty</label>
-                    <select name="warranty_years" id="editProdWarranty" class="fc">
-                        <option value="0">No Warranty</option>
-                        <option value="0.5">6 Months Warranty</option>
-                        <option value="1">1 Year Warranty</option>
-                        <option value="2">2 Years Warranty</option>
-                        <option value="3">3 Years Warranty</option>
-                    </select>
-                    <div class="f-hint">Saved as a product spec on the product page.</div>
-                </div>
                 <!-- ── DESCRIPTION FIELD ── -->
                 <div class="fg">
                     <label><i class="fas fa-align-left" style="color:var(--accent);margin-right:4px"></i>Description</label>
                     <textarea name="description" id="editProdDescription" class="fc" rows="4" placeholder="Write a product description…"></textarea>
                     <div class="f-hint">Shown in the Description tab on the product page.</div>
                 </div>
+                <div class="fg"><label>Specs</label><textarea name="specs" id="editProdSpecs" class="fc" rows="4"></textarea></div>
             </div>
             <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
         </form>
@@ -3113,12 +3061,8 @@ function openEditProduct(data) {
     document.getElementById('editProdPrice').value       = data.price;
     document.getElementById('editProdOrigPrice').value   = data.original_price || '';
     document.getElementById('editProdStock').value       = data.stock_count;
+    document.getElementById('editProdSpecs').value       = data.specs        || '';
     document.getElementById('editProdDescription').value = data.description  || '';
-    const wField = document.getElementById('editProdWarranty');
-    if (wField) {
-        const wVal = String(data.warranty_years ?? 1);
-        wField.value = ['0','0.5','1','2','3'].includes(wVal) ? wVal : '1';
-    }
     document.getElementById('editProdExistingImage').value = data.image      || '';
     document.getElementById('editProdImageUrl').value    = data.image        || '';
 

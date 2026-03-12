@@ -70,11 +70,6 @@ if ($pdo) {
         $pdo->exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS category2 VARCHAR(100) NOT NULL DEFAULT ''");
     } catch (PDOException $e) { /* silently skip */ }
 
-    // ── Ensure products has description column ────────────────────────────────
-    try {
-        $pdo->exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''");
-    } catch (PDOException $e) { /* silently skip */ }
-
     // ── Ensure ticker table exists ────────────────────────────────────────
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS ticker_items (
@@ -146,10 +141,10 @@ foreach ($db_categories as $cat) {
 }
 
 // ── Live DB queries ───────────────────────────────────────────────────────────
-// Added p.description and p.category2 to the main products SELECT
+// PATCH: Added p.category2 to the main products SELECT
 $db_products = dbq(
     "SELECT p.id, p.name, p.category, p.category2, p.price, p.original_price,
-            p.image, p.brand, p.stock_count, p.description,
+            p.image, p.brand, p.stock_count,
             CASE WHEN p.stock_count > 0 THEN 1 ELSE 0 END as in_stock,
             GROUP_CONCAT(ps.spec_name SEPARATOR '\n') as specs
      FROM products p
@@ -318,17 +313,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // ── ADD PRODUCT ── includes description + category2 ──────────────────────
+    // ── ADD PRODUCT ── PATCH: added category2 ────────────────────────────────
     if ($act === 'add_product') {
-        $name        = trim($_POST['name'] ?? '');
-        $brand       = trim($_POST['brand'] ?? '');
-        $category    = trim($_POST['category'] ?? '');
-        $category2   = trim($_POST['category2'] ?? '');
-        $price       = floatval($_POST['price'] ?? 0);
-        $orig        = floatval($_POST['original_price'] ?? 0);
-        $stock       = intval($_POST['stock_count'] ?? 0);
-        $description = trim($_POST['description'] ?? '');
-        $image       = trim($_POST['image_url'] ?? '');
+        $name      = trim($_POST['name'] ?? '');
+        $brand     = trim($_POST['brand'] ?? '');
+        $category  = trim($_POST['category'] ?? '');
+        $category2 = trim($_POST['category2'] ?? ''); // PATCH
+        $price     = floatval($_POST['price'] ?? 0);
+        $orig      = floatval($_POST['original_price'] ?? 0);
+        $stock     = intval($_POST['stock_count'] ?? 0);
+        $image     = trim($_POST['image_url'] ?? '');
         if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
@@ -340,22 +334,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
         if ($name && $category && $price > 0) {
             try {
-                $pdo->prepare("INSERT INTO products (name, brand, category, category2, price, original_price, stock_count, image, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                    ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image, $description]);
+                // PATCH: INSERT now includes category2
+                $pdo->prepare("INSERT INTO products (name, brand, category, category2, price, original_price, stock_count, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image]);
                 $new_id = $pdo->lastInsertId();
                 $specs_raw = trim($_POST['specs'] ?? '');
-                $warranty_years = max(0, intval($_POST['warranty_years'] ?? 1));
-                if ($new_id) {
-                    $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name, spec_value) VALUES (?, ?, ?)");
-                    if ($specs_raw) {
-                        foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) {
-                            $sp->execute([$new_id, $sl, '']);
-                        }
-                    }
-                    if ($warranty_years > 0) {
-                        $w_label = $warranty_years . ' ' . ($warranty_years === 1 ? 'Year' : 'Years');
-                        $sp->execute([$new_id, 'Warranty', $w_label]);
-                    }
+                if ($specs_raw && $new_id) {
+                    $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name) VALUES (?, ?)");
+                    foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) $sp->execute([$new_id, $sl]);
                 }
                 $flash = ['type' => 'success', 'msg' => "Product \"$name\" added successfully!"];
             } catch (PDOException $e) {
@@ -369,18 +355,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         exit;
     }
 
-    // ── EDIT PRODUCT ── includes description + category2 ─────────────────────
+    // ── EDIT PRODUCT ── PATCH: added category2 ───────────────────────────────
     if ($act === 'edit_product') {
-        $pid         = intval($_POST['product_id'] ?? 0);
-        $name        = trim($_POST['name'] ?? '');
-        $brand       = trim($_POST['brand'] ?? '');
-        $category    = trim($_POST['category'] ?? '');
-        $category2   = trim($_POST['category2'] ?? '');
-        $price       = floatval($_POST['price'] ?? 0);
-        $orig        = floatval($_POST['original_price'] ?? 0);
-        $stock       = intval($_POST['stock_count'] ?? 0);
-        $description = trim($_POST['description'] ?? '');
-        $image       = trim($_POST['image_url'] ?? '');
+        $pid       = intval($_POST['product_id'] ?? 0);
+        $name      = trim($_POST['name'] ?? '');
+        $brand     = trim($_POST['brand'] ?? '');
+        $category  = trim($_POST['category'] ?? '');
+        $category2 = trim($_POST['category2'] ?? ''); // PATCH
+        $price     = floatval($_POST['price'] ?? 0);
+        $orig      = floatval($_POST['original_price'] ?? 0);
+        $stock     = intval($_POST['stock_count'] ?? 0);
+        $image     = trim($_POST['image_url'] ?? '');
         if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg','jpeg','png','webp','gif'])) {
@@ -393,20 +378,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         if (!$image) $image = trim($_POST['existing_image'] ?? '');
         if ($pid && $name && $category && $price > 0) {
             try {
-                $pdo->prepare("UPDATE products SET name=?, brand=?, category=?, category2=?, price=?, original_price=?, stock_count=?, image=?, description=? WHERE id=?")
-                    ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image, $description, $pid]);
+                // PATCH: UPDATE now includes category2
+                $pdo->prepare("UPDATE products SET name=?, brand=?, category=?, category2=?, price=?, original_price=?, stock_count=?, image=? WHERE id=?")
+                    ->execute([$name, $brand, $category, $category2, $price, $orig ?: $price, $stock, $image, $pid]);
                 $specs_raw = trim($_POST['specs'] ?? '');
-                $warranty_years = max(0, intval($_POST['warranty_years'] ?? 1));
                 $pdo->prepare("DELETE FROM product_specs WHERE product_id=?")->execute([$pid]);
-                $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name, spec_value) VALUES (?, ?, ?)");
                 if ($specs_raw) {
-                    foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) {
-                        $sp->execute([$pid, $sl, '']);
-                    }
-                }
-                if ($warranty_years > 0) {
-                    $w_label = $warranty_years . ' ' . ($warranty_years === 1 ? 'Year' : 'Years');
-                    $sp->execute([$pid, 'Warranty', $w_label]);
+                    $sp = $pdo->prepare("INSERT INTO product_specs (product_id, spec_name) VALUES (?, ?)");
+                    foreach (array_filter(array_map('trim', explode("\n", $specs_raw))) as $sl) $sp->execute([$pid, $sl]);
                 }
                 $flash = ['type' => 'success', 'msg' => "Product \"$name\" updated successfully!"];
             } catch (PDOException $e) {
@@ -805,7 +784,7 @@ $icon_options = [
     'fa-network-wired','fa-wifi','fa-battery-full','fa-plug','fa-toolbox',
 ];
 
-// ── Helper to render category2 badge ─────────────────────────────────────────
+// ── PATCH: Helper to render category2 badge ───────────────────────────────────
 function cat2Badge(string $cat2, array $cat_map): string {
     if (!$cat2) return '';
     $label = $cat_map[$cat2]['label'] ?? ucfirst(str_replace(['_','-'],' ',$cat2));
@@ -1016,16 +995,6 @@ function cat2Badge(string $cat2, array $cat_map): string {
         .se-form { display:inline-flex; align-items:center; gap:4px; }
         .se-num { width:54px; padding:4px 6px; background:var(--surface); border:1px solid rgba(10,10,15,.1); border-radius:6px; font-family:'Red Hat Display',sans-serif; font-size:.81rem; text-align:center; outline:none; color:var(--ink); }
         .se-num:focus { border-color:var(--accent); }
-
-        /* ── DESCRIPTION PREVIEW ─────────────────────────────── */
-        .desc-preview {
-            font-size:.75rem; color:var(--ink-muted); max-width:220px;
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-            display:flex; align-items:center; gap:4px; margin-top:3px;
-        }
-        .desc-preview i { flex-shrink:0; font-size:.65rem; color:var(--ink-muted); opacity:.6; }
-        .desc-has { color:var(--ink-soft); }
-        .desc-none { font-style:italic; opacity:.55; }
 
         /* ── MODAL ───────────────────────────────────────────── */
         .m-overlay { display:none; position:fixed; inset:0; z-index:1000; background:rgba(10,10,15,.55); backdrop-filter:blur(4px); align-items:center; justify-content:center; padding:1rem; }
@@ -1257,7 +1226,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
             </div>
         </div>
 
-        <!-- Ticker Bar Widget -->
+        <!-- Ticker Bar Widget (unchanged) -->
         <style>
             @keyframes tickerDash { from{transform:translateX(0)} to{transform:translateX(-50%)} }
             .db-ticker-wrap { background:var(--card); border-radius:var(--r-xl); box-shadow:var(--shadow); overflow:hidden; margin-bottom:13px; animation:fadeUp .4s .05s ease both; }
@@ -1488,13 +1457,13 @@ function cat2Badge(string $cat2, array $cat_map): string {
         <?php /* ─────────── PRODUCTS ─────────── */ ?>
         <?php elseif ($active==='products'): ?>
 
-        <!-- ══ LIMITED-TIME DEALS ══ -->
+        <!-- ══ LIMITED-TIME DEALS ══ PATCH: added category2, updated query & table ══ -->
         <?php
         $dash_deals = [];
         if ($pdo) {
             try {
                 $stmt = $pdo->query(
-                    "SELECT id, name, brand, category, category2, price, original_price, stock_count, image, description
+                    "SELECT id, name, brand, category, category2, price, original_price, stock_count, image
                     FROM products
                     WHERE category2 = 'limited_time_deals'
                     ORDER BY (original_price - price) DESC"
@@ -1518,7 +1487,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <tr>
                         <th>Image</th><th>Product</th>
                         <th>Category 1</th>
-                        <th>Category 2</th>
+                        <th>Category 2</th><!-- PATCH: new column -->
                         <th>Sale Price</th><th>Original Price</th><th>Saving</th><th>Disc %</th>
                         <th>Stock</th><th>Status</th><th>Actions</th>
                     </tr>
@@ -1531,14 +1500,13 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     $scls  = $stk <= 0 ? 'so' : ($stk <= 5 ? 'sl' : 'sa');
                     $slbl  = $stk <= 0 ? 'Out of Stock' : ($stk <= 5 ? 'Low Stock ('.$stk.')' : 'Active');
                     $cat_label  = $cat_map[$p['category']]['label']  ?? ucfirst($p['category']);
-                    $cat2_val   = $p['category2'] ?? '';
+                    $cat2_val   = $p['category2'] ?? '';   // ← add this line
                     $cat2_label = $cat_map[$cat2_val]['label'] ?? ($cat2_val ? ucfirst(str_replace(['_','-'],' ',$cat2_val)) : '');
                     $edit_data = [
                         'id'=>(int)$p['id'],'name'=>$p['name'],'brand'=>$p['brand']??'',
                         'category'=>$p['category'],'category2'=>$p['category2']??'',
                         'price'=>$p['price'],'original_price'=>$p['original_price'],
                         'stock_count'=>$stk,'image'=>$p['image']??'','specs'=>'',
-                        'description'=>$p['description']??'',
                     ];
                 ?>
                 <tr>
@@ -1555,7 +1523,9 @@ function cat2Badge(string $cat2, array $cat_map): string {
                         <div style="font-size:.68rem;color:var(--ink-muted)"><?= htmlspecialchars($p['brand']) ?></div>
                         <?php endif; ?>
                     </td>
+                    <!-- PATCH: Category 1 -->
                     <td><span class="sb si" style="font-size:.67rem"><?= htmlspecialchars($cat_label) ?></span></td>
+                    <!-- PATCH: Category 2 -->
                     <td>
                         <?php if ($cat2_label): ?>
                         <span class="sb" style="background:#ede9fe;color:#6d28d9;font-size:.67rem">
@@ -1607,14 +1577,14 @@ function cat2Badge(string $cat2, array $cat_map): string {
         </div>
 
 
-        <!-- ══ BEST SELLING PRODUCTS ══ -->
+        <!-- ══ BEST SELLING PRODUCTS ══ PATCH: added category2, updated query & table ══ -->
         <?php
         $dash_bestsellers = [];
         if ($pdo) {
     try {
         $stmt = $pdo->query(
             "SELECT p.id, p.name, p.brand, p.category, p.category2, p.price,
-                    p.original_price, p.stock_count, p.image, p.description,
+                    p.original_price, p.stock_count, p.image,
                     COALESCE(SUM(oi.quantity),0) as total_sold
              FROM products p
              LEFT JOIN order_items oi ON oi.product_id = p.id
@@ -1627,7 +1597,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
     } catch (PDOException $e) {
         try {
             $stmt = $pdo->query(
-                "SELECT id, name, brand, category, category2, price, original_price, stock_count, image, description, 0 as total_sold
+                "SELECT id, name, brand, category, category2, price, original_price, stock_count, image, 0 as total_sold
                  FROM products WHERE category2 = 'best_selling_products' ORDER BY id ASC LIMIT 10"
             );
             $dash_bestsellers = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -1652,7 +1622,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <tr>
                         <th>#</th><th>Image</th><th>Product</th>
                         <th>Category 1</th>
-                        <th>Category 2</th>
+                        <th>Category 2</th><!-- PATCH: new column -->
                         <th>Price (LKR)</th><th>Units Sold</th><th>Sales Bar</th>
                         <th>Stock</th><th>Status</th><th>Actions</th>
                     </tr>
@@ -1675,7 +1645,6 @@ function cat2Badge(string $cat2, array $cat_map): string {
                         'category'=>$p['category'],'category2'=>$p['category2']??'',
                         'price'=>$p['price'],'original_price'=>$p['original_price']??$p['price'],
                         'stock_count'=>$stk,'image'=>$p['image']??'','specs'=>'',
-                        'description'=>$p['description']??'',
                     ];
                 ?>
                 <tr>
@@ -1693,7 +1662,9 @@ function cat2Badge(string $cat2, array $cat_map): string {
                         <div style="font-size:.68rem;color:var(--ink-muted)"><?= htmlspecialchars($p['brand']) ?></div>
                         <?php endif; ?>
                     </td>
+                    <!-- PATCH: Category 1 -->
                     <td><span class="sb si" style="font-size:.67rem"><?= htmlspecialchars($cat_label) ?></span></td>
+                    <!-- PATCH: Category 2 -->
                     <td>
                         <?php if ($cat2_label): ?>
                         <span class="sb" style="background:#ede9fe;color:#6d28d9;font-size:.67rem">
@@ -1784,12 +1755,8 @@ function cat2Badge(string $cat2, array $cat_map): string {
             <div class="tbl-wrap">
             <table id="prodTable">
                 <thead>
-                    <tr>
-                        <th>ID</th><th>Image</th><th>Product / Description</th><th>Brand</th>
-                        <th>Category 1</th><th>Category 2</th>
-                        <th>Price (LKR)</th><th>Orig. Price</th>
-                        <th>Stock</th><th>Status</th><th>Actions</th>
-                    </tr>
+                    <!-- PATCH: Added Category 2 column header -->
+                    <tr><th>ID</th><th>Image</th><th>Product / Specs</th><th>Brand</th><th>Category 1</th><th>Category 2</th><th>Price (LKR)</th><th>Orig. Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                 <?php if ($db_products): foreach ($db_products as $p):
@@ -1797,37 +1764,21 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     $scls=$stk===0?'so':($stk<=5?'sl':'sa');
                     $slbl=$stk===0?'Out of Stock':($stk<=5?'Low Stock':'Active');
                     $cat_label=$cat_map[$p['category']]['label'] ?? ucfirst($p['category']);
+                    // PATCH: category2 label
                     $cat2_val = $p['category2'] ?? '';
                     $cat2_label = $cat_map[$cat2_val]['label'] ?? ($cat2_val ? ucfirst(str_replace(['_','-'],' ',$cat2_val)) : '');
                     $is_orphan = $p['category'] && !isset($cat_map[$p['category']]);
-                    $desc_short = $p['description'] ?? '';
-                    // Extract warranty years from specs string for edit modal
-                    $w_years_val = 1;
-                    if (!empty($p['specs'])) {
-                        foreach (explode("\n", $p['specs']) as $spec_line) {
-                            if (stripos($spec_line, 'warranty') !== false) {
-                                if (preg_match('/(\d+)\s*month/i', $spec_line, $wm)) {
-                                    $w_years_val = max(1, (int)round((int)$wm[1] / 12));
-                                } elseif (preg_match('/(\d+)/', $spec_line, $wm)) {
-                                    $w_years_val = (int)$wm[1];
-                                }
-                                break;
-                            }
-                        }
-                    }
                     $edit_data = [
                         'id'             => (int)$p['id'],
                         'name'           => $p['name'],
                         'brand'          => $p['brand'] ?? '',
                         'category'       => $p['category'],
-                        'category2'      => $cat2_val,
+                        'category2'      => $cat2_val,  // PATCH
                         'price'          => $p['price'],
                         'original_price' => $p['original_price'] ?? '',
                         'stock_count'    => $stk,
                         'image'          => $p['image'] ?? '',
                         'specs'          => $p['specs'] ?? '',
-                        'description'    => $desc_short,
-                        'warranty_years' => $w_years_val,
                     ];
                 ?>
                 <tr data-cat="<?= htmlspecialchars($p['category']) ?>">
@@ -1841,24 +1792,19 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     </td>
                     <td>
                         <strong><?= htmlspecialchars($p['name']) ?></strong>
-                        <?php if ($desc_short): ?>
-                        <div class="desc-preview desc-has" title="<?= htmlspecialchars($desc_short) ?>">
-                            <i class="fas fa-align-left"></i>
-                            <?= htmlspecialchars(mb_strimwidth($desc_short, 0, 55, '…')) ?>
-                        </div>
-                        <?php elseif ($p['specs']): ?>
+                        <?php if ($p['specs']): ?>
                         <div style="font-size:.68rem;color:var(--ink-muted);margin-top:2px;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars(str_replace("\n", ' · ', $p['specs'])) ?></div>
-                        <?php else: ?>
-                        <div class="desc-preview desc-none"><i class="fas fa-align-left"></i> No description</div>
                         <?php endif; ?>
                     </td>
                     <td><?= htmlspecialchars($p['brand']??'—') ?></td>
+                    <!-- PATCH: Category 1 -->
                     <td>
                         <span class="sb <?= $is_orphan?'sw':'si' ?>" style="font-size:.67rem">
                             <?php if ($is_orphan): ?><i class="fas fa-triangle-exclamation" style="font-size:.6rem"></i> <?php endif; ?>
                             <?= htmlspecialchars($cat_label) ?>
                         </span>
                     </td>
+                    <!-- PATCH: Category 2 -->
                     <td>
                         <?php if ($cat2_label): ?>
                         <span class="sb" style="background:#ede9fe;color:#6d28d9;font-size:.67rem">
@@ -2594,7 +2540,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
 </div>
 
 
-<!-- ══ ADD PRODUCT MODAL ══ with Description field ══ -->
+<!-- ══ ADD PRODUCT MODAL ══ PATCH: added Category 2 field ══ -->
 <div class="m-overlay" id="addProductModal">
     <div class="modal">
         <div class="m-hdr"><h3><i class="fas fa-plus" style="color:var(--accent);margin-right:6px"></i>Add New Product</h3><button class="m-close" onclick="closeModal('addProductModal')"><i class="fas fa-xmark"></i></button></div>
@@ -2613,6 +2559,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <div class="fg"><label>Product Name <span>*</span></label><input type="text" name="name" class="fc" required></div>
                     <div class="fg"><label>Brand</label><input type="text" name="brand" class="fc"></div>
                 </div>
+                <!-- PATCH: Category 1 + Category 2 side by side -->
                 <div class="f-row">
                     <div class="fg">
                         <label>Category 1 <span>*</span></label>
@@ -2629,6 +2576,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                         <?php endif; ?>
                     </div>
                     <div class="fg">
+                        <!-- PATCH: Category 2 field -->
                         <label>Category 2 <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
                         <select name="category2" class="fc" id="addProdCategory2">
                             <option value="" selected>— None —</option>
@@ -2643,31 +2591,14 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" class="fc" min="0" step="0.01"></div>
                 </div>
                 <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" class="fc" value="0" min="0"></div>
-                <div class="fg">
-                    <label>Warranty</label>
-                    <select name="warranty_years" class="fc">
-                        <option value="0">No Warranty</option>
-                        <option value="0.5">6 Months Warranty</option>
-                        <option value="1" selected>1 Year Warranty</option>
-                        <option value="2">2 Years Warranty</option>
-                        <option value="3">3 Years Warranty</option>
-                    </select>
-                    <div class="f-hint">Saved as a product spec on the product page.</div>
-                </div>
-                <!-- ── DESCRIPTION FIELD ── -->
-                <div class="fg">
-                    <label><i class="fas fa-align-left" style="color:var(--accent);margin-right:4px"></i>Description</label>
-                    <textarea name="description" id="addProdDescription" class="fc" rows="4" placeholder="Write a product description that will appear on the product detail page…"></textarea>
-                    <div class="f-hint">Supports plain text. Shown in the Description tab on the product page.</div>
-                </div>
-                 <!--<div class="fg"><label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label><textarea name="specs" class="fc"></textarea></div>-->
+                <div class="fg"><label>Specs <small style="font-weight:500;color:var(--ink-muted)">(one per line)</small></label><textarea name="specs" class="fc"></textarea></div>
             </div>
             <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('addProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Save</button></div>
         </form>
     </div>
 </div>
 
-<!-- ══ EDIT PRODUCT MODAL ══ with Description field ══ -->
+<!-- ══ EDIT PRODUCT MODAL ══ PATCH: added Category 2 field ══ -->
 <div class="m-overlay" id="editProductModal">
     <div class="modal">
         <div class="m-hdr"><h3><i class="fas fa-pen" style="color:var(--accent);margin-right:6px"></i>Edit Product</h3><button class="m-close" onclick="closeModal('editProductModal')"><i class="fas fa-xmark"></i></button></div>
@@ -2688,6 +2619,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <div class="fg"><label>Name <span>*</span></label><input type="text" name="name" id="editProdName" class="fc" required></div>
                     <div class="fg"><label>Brand</label><input type="text" name="brand" id="editProdBrand" class="fc"></div>
                 </div>
+                <!-- PATCH: Category 1 + Category 2 side by side -->
                 <div class="f-row">
                     <div class="fg">
                         <label>Category 1 <span>*</span></label>
@@ -2699,6 +2631,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                         </select>
                     </div>
                     <div class="fg">
+                        <!-- PATCH: Category 2 field -->
                         <label>Category 2 <small style="font-weight:500;color:var(--ink-muted)">(optional)</small></label>
                         <select name="category2" id="editProdCategory2" class="fc">
                             <option value="" selected>— None —</option>
@@ -2712,23 +2645,7 @@ function cat2Badge(string $cat2, array $cat_map): string {
                     <div class="fg"><label>Original / MRP</label><input type="number" name="original_price" id="editProdOrigPrice" class="fc" min="0" step="0.01"></div>
                 </div>
                 <div class="fg"><label>Stock Count</label><input type="number" name="stock_count" id="editProdStock" class="fc" min="0"></div>
-                <div class="fg">
-                    <label>Warranty</label>
-                    <select name="warranty_years" id="editProdWarranty" class="fc">
-                        <option value="0">No Warranty</option>
-                        <option value="0.5">6 Months Warranty</option>
-                        <option value="1">1 Year Warranty</option>
-                        <option value="2">2 Years Warranty</option>
-                        <option value="3">3 Years Warranty</option>
-                    </select>
-                    <div class="f-hint">Saved as a product spec on the product page.</div>
-                </div>
-                <!-- ── DESCRIPTION FIELD ── -->
-                <div class="fg">
-                    <label><i class="fas fa-align-left" style="color:var(--accent);margin-right:4px"></i>Description</label>
-                    <textarea name="description" id="editProdDescription" class="fc" rows="4" placeholder="Write a product description…"></textarea>
-                    <div class="f-hint">Shown in the Description tab on the product page.</div>
-                </div>
+                <div class="fg"><label>Specs</label><textarea name="specs" id="editProdSpecs" class="fc" rows="5"></textarea></div>
             </div>
             <div class="m-foot"><button type="button" class="btn-o" onclick="closeModal('editProductModal')">Cancel</button><button type="submit" class="btn-p"><i class="fas fa-floppy-disk"></i> Update</button></div>
         </form>
@@ -2999,11 +2916,10 @@ function openModal(id) {
     modal.classList.add('open');
     document.body.style.overflow = 'hidden';
 
+    // Reset category2 selects to blank on every open
     if (id === 'addProductModal') {
         const s = document.getElementById('addProdCategory2');
         if (s) { s.selectedIndex = 0; s.value = ''; }
-        const d = document.getElementById('addProdDescription');
-        if (d) d.value = '';
     }
     if (id === 'editProductModal') {
         const s = document.getElementById('editProdCategory2');
@@ -3068,7 +2984,7 @@ function prvUrlEdit(val) {
     const img = document.getElementById('editImgPrevImg');
     const ph  = document.getElementById('editImgPh');
     if (val) {
-        img.src = '../' + val;
+        img.src = val;
         img.style.display = 'block';
         if (ph) ph.style.display = 'none';
     } else {
@@ -3077,26 +2993,28 @@ function prvUrlEdit(val) {
     }
 }
 
-// ── Generic preview helpers (Hero Slide / Popup Image) ────────────────────────
+// ── Generic image preview (hero slides / popup images) ────────────────────────
 function adPrvFile(input, imgId, wrapId) {
     const file = input.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function(e) {
-        const img = document.getElementById(imgId);
-        const ph  = document.querySelector('#' + wrapId + ' .iph');
+        const img  = document.getElementById(imgId);
+        const wrap = document.getElementById(wrapId);
         img.src = e.target.result;
         img.style.display = 'block';
+        const ph = wrap ? wrap.querySelector('.iph') : null;
         if (ph) ph.style.display = 'none';
     };
     reader.readAsDataURL(file);
 }
 
 function adPrvUrl(val, imgId, wrapId) {
-    const img = document.getElementById(imgId);
-    const ph  = document.querySelector('#' + wrapId + ' .iph');
+    const img  = document.getElementById(imgId);
+    const wrap = document.getElementById(wrapId);
+    const ph   = wrap ? wrap.querySelector('.iph') : null;
     if (val) {
-        img.src = val.startsWith('http') ? val : '../' + val;
+        img.src = val;
         img.style.display = 'block';
         if (ph) ph.style.display = 'none';
     } else {
@@ -3105,32 +3023,26 @@ function adPrvUrl(val, imgId, wrapId) {
     }
 }
 
-// ── Open Edit Product Modal ───────────────────────────────────────────────────
+// ── Open Edit Product modal ───────────────────────────────────────────────────
 function openEditProduct(data) {
-    document.getElementById('editProdId').value          = data.id;
-    document.getElementById('editProdName').value        = data.name;
-    document.getElementById('editProdBrand').value       = data.brand       || '';
-    document.getElementById('editProdPrice').value       = data.price;
-    document.getElementById('editProdOrigPrice').value   = data.original_price || '';
-    document.getElementById('editProdStock').value       = data.stock_count;
-    document.getElementById('editProdDescription').value = data.description  || '';
-    const wField = document.getElementById('editProdWarranty');
-    if (wField) {
-        const wVal = String(data.warranty_years ?? 1);
-        wField.value = ['0','0.5','1','2','3'].includes(wVal) ? wVal : '1';
-    }
-    document.getElementById('editProdExistingImage').value = data.image      || '';
-    document.getElementById('editProdImageUrl').value    = data.image        || '';
-
-    const cat = document.getElementById('editProdCategory');
-    if (cat) cat.value = data.category || '';
-
-    const cat2 = document.getElementById('editProdCategory2');
-    if (cat2) cat2.value = data.category2 || '';
+    document.getElementById('editProdId').value           = data.id;
+    document.getElementById('editProdName').value         = data.name        || '';
+    document.getElementById('editProdBrand').value        = data.brand       || '';
+    document.getElementById('editProdCategory').value     = data.category    || '';
+    const cat2El = document.getElementById('editProdCategory2');
+    cat2El.selectedIndex = 0;
+    cat2El.value = (data.category2 && data.category2 !== '') ? data.category2 : '';
+    document.getElementById('editProdPrice').value        = data.price       || '';
+    document.getElementById('editProdOrigPrice').value    = data.original_price || '';
+    document.getElementById('editProdStock').value        = data.stock_count != null ? data.stock_count : 0;
+    document.getElementById('editProdSpecs').value        = data.specs       || '';
+    document.getElementById('editProdExistingImage').value= data.image       || '';
 
     // Image preview
     const img = document.getElementById('editImgPrevImg');
     const ph  = document.getElementById('editImgPh');
+    const url = document.getElementById('editProdImageUrl');
+    url.value = data.image || '';
     if (data.image) {
         img.src = '../' + data.image;
         img.style.display = 'block';
@@ -3143,92 +3055,74 @@ function openEditProduct(data) {
     openModal('editProductModal');
 }
 
-// ── Category modal helpers ────────────────────────────────────────────────────
-function autoSlug(input, targetId) {
-    const slug = input.value.toLowerCase().trim()
-        .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-    document.getElementById(targetId).value = slug;
-}
-
+// ── Open Edit Category modal ──────────────────────────────────────────────────
 function openEditCat(data) {
     document.getElementById('editCatId').value   = data.id;
-    document.getElementById('editCatName').value = data.name;
-    document.getElementById('editCatSlug').value = data.slug;
-    document.getElementById('editOldSlug').value = data.slug;
-    document.getElementById('editCatDesc').value = data.desc || '';
-    document.getElementById('editCatIcon').value = data.icon || 'fa-tag';
-    updateIconPreview('edit');
+    document.getElementById('editCatName').value = data.name  || '';
+    document.getElementById('editCatSlug').value = data.slug  || '';
+    document.getElementById('editCatDesc').value = data.desc  || '';
+    document.getElementById('editCatIcon').value = data.icon  || 'fa-tag';
+    document.getElementById('editOldSlug').value = data.slug  || '';
 
-    // Highlight selected icon
+    // Icon preview
+    const ico = data.icon || 'fa-tag';
+    const previewI = document.getElementById('editIconPreviewI');
+    previewI.className = 'fas ' + ico;
+
+    // Highlight selected icon in grid
     document.querySelectorAll('#editIconGrid .icon-opt').forEach(el => {
-        el.classList.toggle('selected', el.title === data.icon);
+        el.classList.toggle('selected', el.title === ico);
     });
 
     openModal('editCatModal');
 }
 
+// ── Open Delete Category modal ────────────────────────────────────────────────
 function openDeleteCat(data) {
     document.getElementById('delCatId').value   = data.id;
-    document.getElementById('delCatSlug').value = data.slug;
+    document.getElementById('delCatSlug').value = data.slug || '';
+
     const msg = document.getElementById('delCatMsg');
     if (data.cnt > 0) {
-        msg.innerHTML = `<strong style="color:#dc2626">Warning:</strong> "${data.name}" has <strong>${data.cnt} product(s)</strong>. Choose what to do with them below.`;
+        msg.innerHTML = '<i class="fas fa-triangle-exclamation" style="color:#f59e0b;margin-right:5px"></i>'
+            + 'Category <strong>' + data.name + '</strong> has <strong>' + data.cnt + ' product(s)</strong> assigned to it. '
+            + 'Choose what to do with them below.';
         document.getElementById('delReassignWrap').style.display = '';
     } else {
-        msg.innerHTML = `Delete category <strong>"${data.name}"</strong>? This cannot be undone.`;
+        msg.innerHTML = 'Are you sure you want to delete <strong>' + data.name + '</strong>? This cannot be undone.';
         document.getElementById('delReassignWrap').style.display = 'none';
     }
+
     openModal('deleteCatModal');
 }
 
-// ── Icon picker helpers ───────────────────────────────────────────────────────
-function selectIcon(prefix, icon) {
-    document.getElementById(prefix + 'CatIcon').value = icon;
-    updateIconPreview(prefix);
-    document.querySelectorAll('#' + prefix + 'IconGrid .icon-opt').forEach(el => {
-        el.classList.toggle('selected', el.title === icon);
-    });
-}
-
-function updateIconPreview(prefix) {
-    const val = document.getElementById(prefix + 'CatIcon').value.trim() || 'fa-tag';
-    const el  = document.getElementById(prefix + 'IconPreviewI');
-    if (el) el.className = 'fas ' + val;
-}
-
-// ── Ticker modal helpers ──────────────────────────────────────────────────────
+// ── Open Edit Ticker modal ────────────────────────────────────────────────────
 function openEditTicker(data) {
-    document.getElementById('editTickerId').value      = data.id;
-    document.getElementById('editTickerEmoji').value   = data.emoji       || '';
-    document.getElementById('editTickerMessage').value = data.message     || '';
-    document.getElementById('editTickerLinkUrl').value = data.link_url    || '';
-    document.getElementById('editTickerLinkText').value= data.link_text   || '';
-    document.getElementById('editTickerOrder').value   = data.sort_order  || 0;
-    document.getElementById('editTickerActive').checked= !!data.is_active;
+    document.getElementById('editTickerId').value        = data.id;
+    document.getElementById('editTickerEmoji').value     = data.emoji     || '';
+    document.getElementById('editTickerMessage').value   = data.message   || '';
+    document.getElementById('editTickerLinkUrl').value   = data.link_url  || '';
+    document.getElementById('editTickerLinkText').value  = data.link_text || '';
+    document.getElementById('editTickerOrder').value     = data.sort_order != null ? data.sort_order : 0;
+    document.getElementById('editTickerActive').checked  = !!data.is_active;
     openModal('editTickerModal');
 }
 
-// ── Ticker colour preview ─────────────────────────────────────────────────────
-function updateTickerPreviewColor(color) {
-    const bar = document.getElementById('livePreviewBar');
-    if (bar) bar.style.background = color;
-    const dBar = document.getElementById('dashTickerBar');
-    if (dBar) dBar.style.background = color;
-}
-
-// ── Hero Slide modal helpers ──────────────────────────────────────────────────
+// ── Open Edit Hero Slide modal ────────────────────────────────────────────────
 function openEditHeroSlide(data) {
     document.getElementById('editSlideId').value            = data.id;
     document.getElementById('editSlideLink').value          = data.link_url   || '';
-    document.getElementById('editSlideOrder').value         = data.sort_order || 0;
+    document.getElementById('editSlideOrder').value         = data.sort_order != null ? data.sort_order : 0;
     document.getElementById('editSlideActive').checked      = !!data.is_active;
     document.getElementById('editSlideExistingImage').value = data.image_url  || '';
-    document.getElementById('editSlideImageUrl').value      = data.image_url  || '';
+
+    const url = document.getElementById('editSlideImageUrl');
+    url.value = data.image_url || '';
 
     const img = document.getElementById('editSlideImgPrevImg');
     const ph  = document.getElementById('editSlideImgPh');
     if (data.image_url) {
-        img.src = data.image_url.startsWith('http') ? data.image_url : '../' + data.image_url;
+        img.src = '../' + data.image_url;
         img.style.display = 'block';
         if (ph) ph.style.display = 'none';
     } else {
@@ -3236,33 +3130,25 @@ function openEditHeroSlide(data) {
         if (ph) ph.style.display = '';
     }
 
-    // Populate title/subtitle/btn fields if they exist in the modal
-    const tf = document.getElementById('editSlideTitleField');
-    if (tf) tf.value = data.title || '';
-    const sf = document.getElementById('editSlideSubtitleField');
-    if (sf) sf.value = data.subtitle || '';
-    const bf = document.getElementById('editSlideBtnField');
-    if (bf) bf.value = data.btn_text || 'Shop Now';
-    const gf = document.getElementById('editSlideGhostField');
-    if (gf) gf.value = data.btn_ghost_text || 'View All';
-
     openModal('editHeroSlideModal');
 }
 
-// ── Popup Image modal helpers ─────────────────────────────────────────────────
+// ── Open Edit Popup Image modal ───────────────────────────────────────────────
 function openEditPopupImage(data) {
     document.getElementById('editPopupId').value            = data.id;
     document.getElementById('editPopupAlt').value           = data.alt_text  || '';
     document.getElementById('editPopupLink').value          = data.link_url  || '';
-    document.getElementById('editPopupOrder').value         = data.sort_order|| 0;
+    document.getElementById('editPopupOrder').value         = data.sort_order != null ? data.sort_order : 0;
     document.getElementById('editPopupActive').checked      = !!data.is_active;
     document.getElementById('editPopupExistingImage').value = data.image_src || '';
-    document.getElementById('editPopupImageUrl').value      = data.image_src || '';
+
+    const url = document.getElementById('editPopupImageUrl');
+    url.value = data.image_src || '';
 
     const img = document.getElementById('editPopupImgPrevImg');
     const ph  = document.getElementById('editPopupImgPh');
     if (data.image_src) {
-        img.src = data.image_src.startsWith('http') ? data.image_src : '../' + data.image_src;
+        img.src = '../' + data.image_src;
         img.style.display = 'block';
         if (ph) ph.style.display = 'none';
     } else {
@@ -3273,42 +3159,59 @@ function openEditPopupImage(data) {
     openModal('editPopupImageModal');
 }
 
-// ── Category tab filter (Products page) ───────────────────────────────────────
-document.querySelectorAll('#catTabs .ftab').forEach(tab => {
-    tab.addEventListener('click', e => {
-        e.preventDefault();
-        document.querySelectorAll('#catTabs .ftab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        const cat = tab.dataset.cat;
-        document.querySelectorAll('#prodTable tbody tr').forEach(row => {
-            row.style.display = (cat === 'all' || row.dataset.cat === cat) ? '' : 'none';
+// ── Ticker preview colour update ──────────────────────────────────────────────
+function updateTickerPreviewColor(color) {
+    const bar1 = document.getElementById('livePreviewBar');
+    const bar2 = document.getElementById('dashTickerBar');
+    if (bar1) bar1.style.background = color;
+    if (bar2) bar2.style.background = color;
+}
+
+// ── Auto-slug from category name ──────────────────────────────────────────────
+function autoSlug(nameInput, slugId) {
+    const slugField = document.getElementById(slugId);
+    if (!slugField) return;
+    // Only auto-fill if user hasn't manually edited it
+    if (slugField.dataset.manual === 'true') return;
+    slugField.value = nameInput.value
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const slugField = document.getElementById('addCatSlug');
+    if (slugField) {
+        slugField.addEventListener('input', function() {
+            this.dataset.manual = 'true';
         });
-    });
+    }
 });
 
-// ── Order status tab filter ───────────────────────────────────────────────────
-document.querySelectorAll('#orderTabs .ftab').forEach(tab => {
-    tab.addEventListener('click', e => {
-        e.preventDefault();
-        document.querySelectorAll('#orderTabs .ftab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        const filter = tab.dataset.filter;
-        document.querySelectorAll('#orderTable tbody tr').forEach(row => {
-            row.style.display = (filter === 'all' || row.dataset.status === filter) ? '' : 'none';
-        });
-    });
-});
+// ── Icon picker ───────────────────────────────────────────────────────────────
+function selectIcon(mode, ico) {
+    const inputId   = mode === 'add' ? 'addCatIcon'      : 'editCatIcon';
+    const gridId    = mode === 'add' ? 'addIconGrid'      : 'editIconGrid';
+    const previewId = mode === 'add' ? 'addIconPreviewI'  : 'editIconPreviewI';
 
-// ── Global search bar ─────────────────────────────────────────────────────────
-document.getElementById('gSearch').addEventListener('input', function() {
-    const q = this.value.toLowerCase();
-    document.querySelectorAll('tbody tr').forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-    });
-});
+    document.getElementById(inputId).value = ico;
+    document.getElementById(previewId).className = 'fas ' + ico;
 
-// ── Per-table search helpers ──────────────────────────────────────────────────
-function bindSearch(inputId, tableId) {
+    document.querySelectorAll('#' + gridId + ' .icon-opt').forEach(el => {
+        el.classList.toggle('selected', el.title === ico);
+    });
+}
+
+function updateIconPreview(mode) {
+    const inputId   = mode === 'add' ? 'addCatIcon'     : 'editCatIcon';
+    const previewId = mode === 'add' ? 'addIconPreviewI': 'editIconPreviewI';
+    const val = document.getElementById(inputId).value.trim();
+    if (val) document.getElementById(previewId).className = 'fas ' + val;
+}
+
+// ── Table search (product / order / customer / category / ticker) ─────────────
+function wireSearch(inputId, tableId) {
     const input = document.getElementById(inputId);
     const table = document.getElementById(tableId);
     if (!input || !table) return;
@@ -3319,39 +3222,111 @@ function bindSearch(inputId, tableId) {
         });
     });
 }
-bindSearch('prodSearch',    'prodTable');
-bindSearch('orderSearch',   'orderTable');
-bindSearch('custSearch',    'custTable');
-bindSearch('catSearch',     'catTable');
-bindSearch('tickerSearch',  'tickerTable');
 
-// ── CSV Export ────────────────────────────────────────────────────────────────
+wireSearch('prodSearch',   'prodTable');
+wireSearch('orderSearch',  'orderTable');
+wireSearch('custSearch',   'custTable');
+wireSearch('catSearch',    'catTable');
+wireSearch('tickerSearch', 'tickerTable');
+
+// ── Global topbar search ──────────────────────────────────────────────────────
+const gSearch = document.getElementById('gSearch');
+if (gSearch) {
+    gSearch.addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        document.querySelectorAll('table tbody tr').forEach(row => {
+            row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
+        });
+    });
+}
+
+// ── Category filter tabs (Products page) ──────────────────────────────────────
+const catTabs = document.getElementById('catTabs');
+if (catTabs) {
+    catTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.ftab');
+        if (!tab) return;
+        e.preventDefault();
+        catTabs.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const cat = tab.dataset.cat;
+        document.querySelectorAll('#prodTable tbody tr').forEach(row => {
+            row.style.display = (cat === 'all' || row.dataset.cat === cat) ? '' : 'none';
+        });
+    });
+}
+
+// ── Order status filter tabs ──────────────────────────────────────────────────
+const orderTabs = document.getElementById('orderTabs');
+if (orderTabs) {
+    orderTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.ftab');
+        if (!tab) return;
+        e.preventDefault();
+        orderTabs.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const filter = tab.dataset.filter;
+        document.querySelectorAll('#orderTable tbody tr').forEach(row => {
+            row.style.display = (filter === 'all' || row.dataset.status === filter) ? '' : 'none';
+        });
+    });
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────
 function exportTable(tableId) {
     const table = document.getElementById(tableId);
     if (!table) return;
-    const rows  = Array.from(table.querySelectorAll('tr'));
-    const csv   = rows.map(row =>
-        Array.from(row.querySelectorAll('th,td'))
-            .map(cell => '"' + cell.innerText.replace(/"/g, '""').replace(/\n/g, ' ') + '"')
-            .join(',')
-    ).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = tableId + '_export_' + new Date().toISOString().slice(0,10) + '.csv';
-    a.click();
+
+    const rows = [];
+    // Headers
+    const headers = [];
+    table.querySelectorAll('thead th').forEach(th => {
+        headers.push('"' + th.innerText.replace(/"/g, '""') + '"');
+    });
+    rows.push(headers.join(','));
+
+    // Body rows (only visible ones)
+    table.querySelectorAll('tbody tr').forEach(tr => {
+        if (tr.style.display === 'none') return;
+        const cells = [];
+        tr.querySelectorAll('td').forEach(td => {
+            // Get text content, strip extra whitespace
+            let text = td.innerText.replace(/\s+/g, ' ').trim();
+            cells.push('"' + text.replace(/"/g, '""') + '"');
+        });
+        rows.push(cells.join(','));
+    });
+
+    const csv     = rows.join('\n');
+    const blob    = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url     = URL.createObjectURL(blob);
+    const link    = document.createElement('a');
+    const ts      = new Date().toISOString().slice(0,10);
+    link.href     = url;
+    link.download = tableId + '_' + ts + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
 }
 
-// ── Auto-dismiss flash messages ───────────────────────────────────────────────
-setTimeout(() => {
-    document.querySelectorAll('.flash').forEach(el => {
-        el.style.transition = 'opacity .5s';
-        el.style.opacity    = '0';
-        setTimeout(() => el.remove(), 500);
-    });
-}, 4500);
+// ── Auto-dismiss flash messages after 4 seconds ───────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+    const flash = document.querySelector('.flash');
+    if (flash) {
+        setTimeout(() => {
+            flash.style.transition = 'opacity .5s ease';
+            flash.style.opacity    = '0';
+            setTimeout(() => flash.remove(), 500);
+        }, 4000);
+    }
+});
+
+// ── Highlight active bar chart bar on hover ───────────────────────────────────
+document.querySelectorAll('.bar').forEach(bar => {
+    bar.addEventListener('mouseenter', function() { this.classList.add('hi'); });
+    bar.addEventListener('mouseleave', function() { this.classList.remove('hi'); });
+});
 </script>
 </body>
 </html>
